@@ -14,30 +14,36 @@ class RenderError(ValueError):
 def _read_pcm16_mono(path: Path) -> tuple[int, array]:
     with wave.open(str(path), "rb") as wav:
         if wav.getsampwidth() != 2:
-            raise RenderError(f"{path}: only 16-bit PCM WAV is supported in M0.1")
+            raise RenderError(f"{path}: only 16-bit PCM WAV is supported in M0.3")
         if wav.getnchannels() != 1:
-            raise RenderError(f"{path}: only mono WAV is supported in M0.1")
+            raise RenderError(f"{path}: only mono WAV is supported in M0.3")
         sample_rate = wav.getframerate()
         samples = array("h")
         samples.frombytes(wav.readframes(wav.getnframes()))
         return sample_rate, samples
 
 
-def render_recipe(recipe: Recipe, recipe_path: Path, output_path: Path) -> Path:
+def render_recipe(
+    recipe: Recipe,
+    recipe_path: Path,
+    output_path: Path,
+    source_root: Path | None = None,
+) -> Path:
     loaded: list[tuple[int, int, float, array]] = []
+    base_root = source_root.resolve() if source_root is not None else recipe_path.parent.resolve()
     common_rate: int | None = None
     total_frames = 0
 
     for layer in recipe.layers:
         source = Path(layer.source)
         if not source.is_absolute():
-            source = (recipe_path.parent / source).resolve()
+            source = (base_root / source).resolve()
 
         rate, samples = _read_pcm16_mono(source)
         if common_rate is None:
             common_rate = rate
         elif rate != common_rate:
-            raise RenderError("all M0.1 layers must share one sample rate")
+            raise RenderError("all M0.3 layers must share one sample rate")
 
         offset_frames = round(layer.offset_ms * rate / 1000)
         total_frames = max(total_frames, offset_frames + len(samples))
