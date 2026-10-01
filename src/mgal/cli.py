@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     render = sub.add_parser("render", help="Render a recipe to a WAV file")
     render.add_argument("recipe")
     render.add_argument("--output", "-o", required=True)
+    render.add_argument("--audio-root", help="Resolve relative recipe sources from this folder")
 
     browser = sub.add_parser("serve", help="Launch the Browser Audition Board")
     browser.add_argument("audio_root", help="Folder containing WAV files")
@@ -52,7 +53,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "render":
         recipe_path = Path(args.recipe).resolve()
         recipe = load_recipe(recipe_path)
-        output = render_recipe(recipe, recipe_path, Path(args.output).resolve())
+        output = render_recipe(
+            recipe,
+            recipe_path,
+            Path(args.output).resolve(),
+            source_root=Path(args.audio_root).resolve() if args.audio_root else None,
+        )
         print(output)
         return 0
 
