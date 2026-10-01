@@ -4,7 +4,6 @@ from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
-import shutil
 from typing import Any
 
 from .audio import read_wav_metadata
@@ -67,6 +66,15 @@ def _json_bytes(payload: object) -> bytes:
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(_json_bytes(payload))
+
+
+def _safe_slug(value: str) -> str:
+    cleaned = "".join(
+        character.lower() if character.isalnum() else "-"
+        for character in value
+    )
+    cleaned = "-".join(part for part in cleaned.split("-") if part)
+    return cleaned or "candidate"
 
 
 def _sha256(path: Path) -> str:
@@ -148,6 +156,8 @@ def build_evidence_bundle(
     board = load_candidate_board(board_path)
     selected = _selected_candidate(board)
 
+    if output_dir.exists() and not output_dir.is_dir():
+        raise EvidenceBundleError(f"output path is not a directory: {output_dir}")
     if output_dir.exists() and any(output_dir.iterdir()):
         raise EvidenceBundleError(f"output directory is not empty: {output_dir}")
 
@@ -159,8 +169,11 @@ def build_evidence_bundle(
     _write_json(output_dir / "source-index.json", _source_index(board, audio_root))
     _write_json(output_dir / "candidate-board.json", _board_to_dict(board))
 
-    for candidate in board.candidates:
-        filename = f"{candidate.label.lower()}-{candidate.id}.json"
+    for index, candidate in enumerate(board.candidates, start=1):
+        filename = (
+            f"{index:02d}-{_safe_slug(candidate.label)}-"
+            f"{_safe_slug(candidate.id)}.json"
+        )
         _write_json(candidates_dir / filename, _recipe_to_dict(candidate.recipe))
 
     _write_json(output_dir / "selected-recipe.json", _recipe_to_dict(selected.recipe))
@@ -225,7 +238,12 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
     if not isinstance(files, list):
         raise EvidenceBundleError("manifest.files must be a list")
 
+    expected_count = manifest.get("file_count")
+    if not isinstance(expected_count, int) or expected_count != len(files):
+        raise EvidenceBundleError("manifest.file_count does not match files")
+
     verified = 0
+    seen_paths: set[str] = set()
     for item in files:
         if not isinstance(item, dict):
             raise EvidenceBundleError("manifest file entry must be an object")
@@ -234,6 +252,11 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
         expected_bytes = item.get("bytes")
         if not isinstance(relative, str):
             raise EvidenceBundleError("manifest path must be a string")
+        if Path(relative).is_absolute():
+            raise EvidenceBundleError(f"manifest path must be relative: {relative}")
+        if relative in seen_paths:
+            raise EvidenceBundleError(f"duplicate manifest path: {relative}")
+        seen_paths.add(relative)
         if not isinstance(expected_hash, str):
             raise EvidenceBundleError(f"{relative}: sha256 must be a string")
         if not isinstance(expected_bytes, int):
