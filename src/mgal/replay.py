@@ -189,7 +189,7 @@ def replay_evidence_bundle(
     source_overrides: dict[str, Path] | None = None
     if relink_map_path is not None:
         try:
-            source_overrides = load_relink_map(relink_map_path, audio_root)
+            source_overrides = load_relink_map(relink_map_path, audio_root, bundle_dir=bundle_dir)
         except SourceRecoveryError as exc:
             raise EvidenceReplayError(f"relink map validation failed: {exc}") from exc
         if set(source_overrides) != expected_sources:
