@@ -59,7 +59,7 @@ function stopMix() {
   });
   state.mixVoices = [];
   previewMixButton.textContent = "▶ Preview mix";
-  stopMixButton.disabled = state.selected.length === 0;
+  stopMixButton.disabled = true;
 }
 
 function stopAll() {
@@ -184,11 +184,21 @@ async function previewMix() {
       gainNode.connect(audioContext.destination);
       source.start(startAt + entry.layer.offset_ms / 1000);
 
-      return {
+      const voice = {
         path: entry.layer.sound.relative_path,
         source: source,
         gainNode: gainNode,
       };
+      source.onended = function () {
+        state.mixVoices = state.mixVoices.filter(function (candidate) {
+          return candidate.source !== source;
+        });
+        if (state.mixVoices.length === 0) {
+          previewMixButton.textContent = "▶ Preview mix";
+          stopMixButton.disabled = true;
+        }
+      };
+      return voice;
     });
 
     previewMixButton.textContent = "↻ Replay mix";
@@ -352,7 +362,6 @@ function renderLayer(layer) {
 
   const offsetControl = document.createElement("label");
   offsetControl.className = "layer-control";
-  const offsetSpacer = document.createElement("span");
   const offsetInput = document.createElement("input");
   offsetInput.className = "offset-input";
   offsetInput.type = "number";
