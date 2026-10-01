@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mado-game-audio-loop"
-version = "0.1.0"
+version = "0.2.0"
 description = "A reproducible local workbench for game sound-effect recipes."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,3 +22,6 @@ pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mgal"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/mgal/web" = "mgal/web"
