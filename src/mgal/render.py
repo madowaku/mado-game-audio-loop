@@ -28,6 +28,7 @@ def render_recipe(
     recipe_path: Path,
     output_path: Path,
     source_root: Path | None = None,
+    source_overrides: dict[str, Path] | None = None,
 ) -> Path:
     loaded: list[tuple[int, int, float, array]] = []
     base_root = source_root.resolve() if source_root is not None else recipe_path.parent.resolve()
@@ -35,9 +36,12 @@ def render_recipe(
     total_frames = 0
 
     for layer in recipe.layers:
-        source = Path(layer.source)
-        if not source.is_absolute():
-            source = (base_root / source).resolve()
+        if source_overrides is not None and layer.source in source_overrides:
+            source = source_overrides[layer.source].resolve()
+        else:
+            source = Path(layer.source)
+            if not source.is_absolute():
+                source = (base_root / source).resolve()
 
         rate, samples = _read_pcm16_mono(source)
         if common_rate is None:
