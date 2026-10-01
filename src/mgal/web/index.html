@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MGAL Audition Board</title>
+  <title>MGAL Layer Mixer</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="topbar">
     <div>
       <p class="eyebrow">MADO GAME AUDIO LOOP</p>
-      <h1>Browser Audition Board</h1>
+      <h1>Layer Mixer</h1>
     </div>
     <div class="status" id="status">Scanning…</div>
   </header>
@@ -31,7 +31,7 @@
     <aside class="recipe-panel">
       <div class="panel-heading">
         <div>
-          <p class="eyebrow">RECIPE DRAFT</p>
+          <p class="eyebrow">LIVE MIX</p>
           <h2>Selected layers</h2>
         </div>
         <span id="layer-count" class="count">0 / 4</span>
@@ -42,12 +42,17 @@
         <input id="intent" value="game sound effect" aria-label="Recipe intent">
       </label>
 
+      <div class="mix-transport">
+        <button id="preview-mix" class="primary" type="button" disabled>▶ Preview mix</button>
+        <button id="stop-mix" class="secondary" type="button" disabled>■ Stop</button>
+      </div>
+
       <div id="recipe-layers" class="recipe-layers">
         <p class="hint">Use “Add layer” on sounds you want to combine.</p>
       </div>
 
-      <button id="download-recipe" class="primary" type="button" disabled>Download recipe JSON</button>
-      <p class="footnote">M0.2 creates the draft. Mixing controls arrive in M0.3.</p>
+      <button id="download-recipe" class="primary full-width" type="button" disabled>Download recipe JSON</button>
+      <p class="footnote">Gain and offset are saved to the recipe. Mute and solo are audition-only controls.</p>
     </aside>
   </main>
 
