@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MGAL Layer Mixer</title>
+  <title>MGAL Candidate Board</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="topbar">
     <div>
       <p class="eyebrow">MADO GAME AUDIO LOOP</p>
-      <h1>Layer Mixer</h1>
+      <h1>Candidate Board</h1>
     </div>
     <div class="status" id="status">Scanning…</div>
   </header>
@@ -32,7 +32,7 @@
       <div class="panel-heading">
         <div>
           <p class="eyebrow">LIVE MIX</p>
-          <h2>Selected layers</h2>
+          <h2 id="mixer-title">Base recipe</h2>
         </div>
         <span id="layer-count" class="count">0 / 4</span>
       </div>
@@ -51,8 +51,23 @@
         <p class="hint">Use “Add layer” on sounds you want to combine.</p>
       </div>
 
-      <button id="download-recipe" class="primary full-width" type="button" disabled>Download recipe JSON</button>
-      <p class="footnote">Gain and offset are saved to the recipe. Mute and solo are audition-only controls.</p>
+      <button id="download-recipe" class="secondary full-width" type="button" disabled>Download active recipe</button>
+
+      <section class="candidate-section">
+        <div class="candidate-section-head">
+          <div>
+            <p class="eyebrow">A / B / C</p>
+            <h2>Candidate Board</h2>
+          </div>
+          <button id="seed-candidates" class="primary compact" type="button" disabled>Fork A/B/C</button>
+        </div>
+
+        <p id="candidate-help" class="hint">Build a mix, then fork it into three candidates for rapid comparison.</p>
+        <div id="candidate-board" class="candidate-board"></div>
+        <button id="download-board" class="secondary full-width" type="button" disabled>Download board JSON</button>
+      </section>
+
+      <p class="footnote">Gain and offset persist. Mute and solo are audition-only. Candidate decisions and lineage live in the board JSON.</p>
     </aside>
   </main>
 
