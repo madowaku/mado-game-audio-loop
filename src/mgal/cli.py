@@ -7,6 +7,7 @@ from pathlib import Path
 from .audio import scan_audio
 from .recipe import load_recipe
 from .render import render_recipe
+from .server import serve
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -22,6 +23,16 @@ def build_parser() -> argparse.ArgumentParser:
     render = sub.add_parser("render", help="Render a recipe to a WAV file")
     render.add_argument("recipe")
     render.add_argument("--output", "-o", required=True)
+
+    browser = sub.add_parser("serve", help="Launch the Browser Audition Board")
+    browser.add_argument("audio_root", help="Folder containing WAV files")
+    browser.add_argument("--host", default="127.0.0.1")
+    browser.add_argument("--port", type=int, default=8765)
+    browser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not open the browser automatically",
+    )
 
     return parser
 
@@ -43,6 +54,15 @@ def main(argv: list[str] | None = None) -> int:
         recipe = load_recipe(recipe_path)
         output = render_recipe(recipe, recipe_path, Path(args.output).resolve())
         print(output)
+        return 0
+
+    if args.command == "serve":
+        serve(
+            audio_root=args.audio_root,
+            host=args.host,
+            port=args.port,
+            open_browser=not args.no_browser,
+        )
         return 0
 
     return 2
