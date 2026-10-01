@@ -1,11 +1,19 @@
 from mgal.server import WEB_ROOT
 
 
-def test_layer_mixer_static_contract():
+def test_candidate_board_static_contract():
     html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
     js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
 
-    for element_id in ("preview-mix", "stop-mix", "recipe-layers", "download-recipe"):
+    for element_id in (
+        "preview-mix",
+        "stop-mix",
+        "recipe-layers",
+        "download-recipe",
+        "seed-candidates",
+        "candidate-board",
+        "download-board",
+    ):
         assert f'id="{element_id}"' in html
 
     for token in (
@@ -14,7 +22,14 @@ def test_layer_mixer_static_contract():
         "offset_ms",
         "muted",
         "solo",
-        "Preview mix",
+        "seedCandidates",
+        "candidateDeltaCount",
+        "parent_recipe_id",
+        "revision",
+        "favorite",
+        "reject",
+        "selected",
+        "selected_candidate_id",
     ):
         assert token in js
 
