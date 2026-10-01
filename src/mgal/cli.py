@@ -9,6 +9,7 @@ from .candidate import load_candidate_board
 from .evidence import build_evidence_bundle, verify_evidence_bundle
 from .recipe import load_recipe
 from .render import render_recipe
+from .replay import replay_evidence_bundle
 from .server import serve
 
 
@@ -38,6 +39,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify Evidence Bundle hashes and file sizes",
     )
     verify_bundle.add_argument("bundle_dir")
+
+    replay_bundle = sub.add_parser(
+        "replay-bundle",
+        help="Replay an Evidence Bundle against the current source library",
+    )
+    replay_bundle.add_argument("bundle_dir")
+    replay_bundle.add_argument(
+        "--audio-root",
+        required=True,
+        help="Folder containing source WAV files",
+    )
+    replay_bundle.add_argument(
+        "--output",
+        help="Optional replayed WAV path outside the Evidence Bundle",
+    )
 
     scan = sub.add_parser("scan", help="Scan a folder for supported audio files")
     scan.add_argument("folder")
@@ -93,6 +109,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "verify-bundle":
         print(json.dumps(verify_evidence_bundle(args.bundle_dir), indent=2))
+        return 0
+
+    if args.command == "replay-bundle":
+        print(
+            json.dumps(
+                replay_evidence_bundle(
+                    args.bundle_dir,
+                    args.audio_root,
+                    output_path=args.output,
+                ),
+                indent=2,
+            )
+        )
         return 0
 
     if args.command == "scan":
