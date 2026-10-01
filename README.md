@@ -2,20 +2,25 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work from “find something and drop it in” into a reproducible loop:
 
-**scan → audition → layer → mix → fork → compare → decide → bundle → replay → reuse**
+**scan → audition → layer → mix → fork → compare → decide → bundle → replay → recover → reuse**
 
-## Current milestone: M0.6 Evidence Replay
+## Current milestone: M0.7 Source Recovery / Relink
 
-MGAL can now prove that an Evidence Bundle is still reproducible against a current source library.
+MGAL can now recover Evidence Replay after source WAV files have been moved or renamed.
 
-Replay verifies four linked layers:
+The Evidence Bundle remains immutable.
 
-- the Evidence Bundle payload set and manifest hashes
-- the Candidate Board / selected Recipe / decision semantic chain
-- every referenced source WAV against the stored source fingerprint
-- a fresh deterministic render against the stored `output.wav`
+Instead of rewriting old Recipes or source-index paths, MGAL creates an external `relink-map.json` that says:
 
-A successful replay means the current source files can reproduce the selected sound byte-for-byte.
+```text
+logical evidence path          current physical path
+
+metal.wav                  →   archive/sfx/metal_03.wav
+impact.wav                 →   combat/impact_final.wav
+```
+
+Recovery uses the original source fingerprints from `source-index.json`.
+
 ## Quick start
 
 ```bash
@@ -24,36 +29,145 @@ pytest
 mgal serve ./audio
 ```
 
-Build a mix in the browser, fork A/B/C, choose one candidate, and download the Candidate Board JSON.
-
-Then build an Evidence Bundle:
+A normal evidence flow is:
 
 ```bash
-mgal bundle ~/Downloads/heavy-slash-base-candidates.json \
+mgal bundle candidates.json \
   --audio-root ./audio \
   --output ./evidence/session-001
-```
 
-Verify bundle integrity later:
-
-```bash
-mgal verify-bundle ./evidence/session-001
-```
-
-Replay the evidence against the current source library:
-
-```bash
 mgal replay-bundle ./evidence/session-001 \
   --audio-root ./audio
 ```
 
-Optionally save the regenerated WAV outside the bundle:
+If the library is later reorganized and replay fails:
+
+```bash
+mgal recover-sources ./evidence/session-001 \
+  --search-root ./audio-reorganized \
+  --output ./relinks/session-001.json
+```
+
+Then replay through the recovered map:
 
 ```bash
 mgal replay-bundle ./evidence/session-001 \
-  --audio-root ./audio \
+  --audio-root ./audio-reorganized \
+  --relink-map ./relinks/session-001.json
+```
+
+Optionally write a fresh replayed WAV outside the Evidence Bundle:
+
+```bash
+mgal replay-bundle ./evidence/session-001 \
+  --audio-root ./audio-reorganized \
+  --relink-map ./relinks/session-001.json \
   --output ./replays/session-001.wav
 ```
+
+## Recovery behavior
+
+MGAL scans `--search-root` recursively for WAV files.
+
+For each source fingerprint in the Evidence Bundle:
+
+1. try the original relative path first
+2. if it no longer matches, filter candidate WAVs by byte size
+3. SHA-256 only the size-compatible candidates
+4. classify the source as:
+   - `direct`
+   - `relinked`
+   - `ambiguous`
+   - `missing`
+
+A unique SHA-256 match is relinked automatically.
+
+Example result:
+
+```json
+{
+  "relink_map_version": "0.1",
+  "complete": true,
+  "resolved_count": 2,
+  "ambiguous_count": 0,
+  "missing_count": 0,
+  "mappings": [
+    {
+      "source": "metal.wav",
+      "status": "relinked",
+      "target": "archive/sfx/metal_03.wav",
+      "sha256": "...",
+      "bytes": 24812,
+      "matches": ["archive/sfx/metal_03.wav"]
+    }
+  ]
+}
+```
+
+## Ambiguous matches
+
+If two current files have the same expected bytes and SHA-256, MGAL does not guess.
+
+```text
+metal.wav
+  ├── archive/metal.wav
+  └── backup/metal-copy.wav
+
+status = ambiguous
+complete = false
+```
+
+The generated map lists both matches.
+
+The user can remove the duplicate or explicitly edit the external map to one validated target, then mark the mapping resolved.
+
+An incomplete map cannot be used for replay.
+
+## Relink-map safety contract
+
+A relink map is deliberately external to the Evidence Bundle.
+
+MGAL enforces:
+
+- relink map output must be outside the Evidence Bundle
+- relink targets must stay beneath the supplied search/audio root
+- targets must still match stored byte count and SHA-256 when loaded
+- the map's logical source set must match the Candidate Board source set
+- the map contains the SHA-256 of the Evidence Bundle `manifest.json`
+- a map created for another Evidence Bundle is rejected
+
+This keeps:
+
+```text
+Evidence = immutable historical truth
+Relink map = current filesystem address book
+```
+
+## Evidence Replay with relinking
+
+Replay still performs the full M0.6 chain:
+
+```text
+Evidence Bundle
+      ↓
+manifest integrity
+      ↓
+Candidate / Recipe / Decision semantics
+      ↓
+logical source set
+      ↓
+relink-map resolution
+      ↓
+current source SHA-256
+      ↓
+selected Recipe render
+      ↓
+stored output.wav comparison
+      ↓
+BYTE IDENTICAL
+```
+
+The Recipe itself is never rewritten.
 
 ## Evidence Bundle layout
 
@@ -63,104 +177,16 @@ evidence/session-001/
 ├── source-index.json
 ├── candidate-board.json
 ├── candidates/
-│   ├── 01-a-....json
-│   ├── 02-b-....json
-│   └── 03-c-....json
 ├── selected-recipe.json
 ├── decision.json
 ├── output.wav
 └── manifest.json
+
+relinks/
+└── session-001.json
 ```
 
-### source-index.json
-
-Only source files actually referenced by the Base Recipe or candidates are indexed.
-
-Each entry includes:
-
-```text
-relative_path
-sha256
-bytes
-duration_ms
-sample_rate
-channels
-sample_width
-frames
-```
-
-Source paths are resolved beneath `--audio-root`. Absolute paths and traversal outside that root are rejected.
-
-### manifest.json
-
-The manifest contains one entry for every payload file except the manifest itself:
-
-```json
-{
-  "evidence_bundle_version": "0.1",
-  "base_recipe_id": "heavy-slash-base",
-  "selected_candidate_id": "heavy-slash-base-b",
-  "file_count": 9,
-  "files": [
-    {
-      "path": "decision.json",
-      "sha256": "...",
-      "bytes": 412
-    }
-  ]
-}
-```
-
-`mgal verify-bundle` checks:
-
-- manifest version
-- manifest file count
-- duplicate paths
-- path traversal
-- file existence
-- file byte size
-- SHA-256 content hash
-
-Any changed payload file causes verification to fail.
-
-## Evidence Replay contract
-
-`mgal replay-bundle` first runs normal bundle verification, then:
-
-1. validates the Candidate Board and selected candidate
-2. confirms `manifest.json`, `candidate-board.json`, `selected-recipe.json`, and `decision.json` agree on the selected candidate
-3. confirms the source-index path set exactly matches all sources referenced by the Base Recipe and candidates
-4. verifies current source byte sizes and SHA-256 values
-5. re-renders the selected Recipe in a temporary directory
-6. compares regenerated WAV byte size and SHA-256 with stored `output.wav`
-
-Replay output is read-only by default. `--output` may write a copy outside the Evidence Bundle.
-
-This is an integrity and reproducibility check, not a cryptographic signature. A coordinated rewrite of the entire bundle and manifest is outside M0.6's authenticity guarantees.
-
-## Candidate workflow
-
-```text
-local WAV library
-      ↓
-build one layered mix
-      ↓
-Fork A/B/C
-      ↓
-edit + preview candidates
-      ↓
-Favorite / Reject / Select
-      ↓
-record decision reason
-      ↓
-download Candidate Board
-      ↓
-mgal bundle
-      ↓
-Evidence Bundle
-      ↓
-mgal verify-bundle
-```
+The relink file is intentionally not inside `evidence/session-001/`.
 
 ## Useful commands
 
@@ -172,6 +198,9 @@ mgal validate-board candidates.json
 mgal bundle candidates.json --audio-root ./audio --output ./evidence/session-001
 mgal verify-bundle ./evidence/session-001
 mgal replay-bundle ./evidence/session-001 --audio-root ./audio
+mgal recover-sources ./evidence/session-001 --search-root ./audio-new
+mgal recover-sources ./evidence/session-001 --search-root ./audio-new --output ./relinks/session-001.json
+mgal replay-bundle ./evidence/session-001 --audio-root ./audio-new --relink-map ./relinks/session-001.json
 mgal render recipe.json --audio-root ./audio --output output.wav
 mgal serve ./audio --no-browser
 ```
@@ -194,49 +223,49 @@ Reproduces the creative comparison:
 - Base Recipe
 - A/B/C Recipes
 - revisions
-- parent revision references
 - lineage
-- favorite / reject / selected state
-- decision reasons
+- decisions and reasons
 
 ### Evidence Bundle
 
-Freezes the decision into an auditable package:
+Freezes the historical decision:
 
 - intent
 - source fingerprints
 - Candidate Board
-- candidate Recipes
 - selected Recipe
 - decision
 - rendered output
 - payload manifest
 
+### Relink Map
+
+Resolves historical logical source names to current physical files:
+
+- source
+- target
+- status
+- SHA-256
+- byte size
+- match candidates
+- bound Evidence Bundle manifest hash
+
 ## Current constraints
 
-M0.6 stays intentionally compact:
+M0.7 stays intentionally compact:
 
 - WAV library only
 - local machine only
 - maximum four mixer layers
-- browser UI has no cloud/CDN dependency
-- bundle creation requires exactly one selected candidate
-- source audio itself is not copied into the bundle
+- recovery searches one root per command
+- automatic recovery requires a unique SHA-256 match
+- source audio itself is not copied into the Evidence Bundle
 - renderer currently expects 16-bit mono WAV layers at a shared sample rate
+- no cryptographic signing yet
 - no trimming, EQ, pitch, reverb, or waveform editing yet
-
-## Project layout
-
-```text
-docs/           product and implementation specs
-src/mgal/       Python package
-src/mgal/web/   local browser workbench
-fixtures/       deterministic test data and recipes
-tests/          recipe, render, server, candidate, evidence, and UI tests
-```
 
 ## Design principle
 
 > Shorten the distance between “I imagine this sound” and “I can hear it in the game”.
 
-AI generation remains a future source provider. The creative loop and its evidence remain the product.
+AI generation remains a future source provider. The creative loop, its evidence, and its replayability remain the product.
