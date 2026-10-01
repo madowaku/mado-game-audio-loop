@@ -61,7 +61,7 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
     root = Path(audio_root).resolve()
 
     class MGALHandler(BaseHTTPRequestHandler):
-        server_version = "MGAL/0.3"
+        server_version = "MGAL/0.4"
 
         def log_message(self, format: str, *args: object) -> None:
             print(f"[mgal] {self.address_string()} - {format % args}")
@@ -132,7 +132,7 @@ def serve(
 
     server = ThreadingHTTPServer((host, port), make_handler(root))
     url = f"http://{host}:{port}"
-    print(f"MGAL Browser Audition Board: {url}")
+    print(f"MGAL Candidate Board: {url}")
     print(f"Audio root: {root}")
     if open_browser:
         webbrowser.open(url)
