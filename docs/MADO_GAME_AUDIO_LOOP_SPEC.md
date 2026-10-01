@@ -205,13 +205,46 @@ The optional \`--audio-root\` makes recipe placement independent from source pla
 
 ### MGAL-M0.4 Candidate Board
 
-Next candidate milestone:
+Established:
 
-- duplicate a recipe into A/B/C variants
-- compare mixes without rebuilding layers
-- favorite / reject / select
-- free-text decision reason
-- preserve candidate lineage
+- fork the active mix into A/B/C candidates
+- edit each candidate independently
+- direct candidate preview without loading it into the mixer
+- copy the active candidate into another candidate
+- structural change count versus the immutable Base Recipe
+- favorite / reject / selected decisions
+- free-text decision reasons
+- revision-qualified lineage refs such as `candidate-a@r1`
+- Candidate Board JSON export
+- Python-side Candidate Board validation
+
+Candidate Board contract:
+
+```text
+Base Recipe
+   ├── A r1
+   ├── B r1
+   └── C r1
+
+Copy A@r1 → B
+
+Base Recipe
+   ├── A r1
+   ├── B r2  parent=A@r1
+   └── C r1
+```
+
+Each candidate stores `id`, `label`, `parent_recipe_id`, `revision`, `lineage`, embedded `recipe`, and `decision`.
+
+Allowed decision states are `undecided`, `favorite`, `reject`, and `selected`. At most one candidate may be selected.
+
+CLI validation:
+
+```bash
+mgal validate-board candidate-board.json
+```
+
+Validation covers recipe structure, unique candidate IDs, selected-candidate consistency, lineage ordering, latest lineage revision, and latest lineage parent source.
 
 ### MGAL-M0.5 Evidence Bundle
 
