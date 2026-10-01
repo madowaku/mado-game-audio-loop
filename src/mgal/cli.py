@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--output", "-o", required=True)
     render.add_argument("--audio-root", help="Resolve relative recipe sources from this folder")
 
-    browser = sub.add_parser("serve", help="Launch the Browser Audition Board")
+    browser = sub.add_parser("serve", help="Launch the MGAL local audio workbench")
     browser.add_argument("audio_root", help="Folder containing WAV files")
     browser.add_argument("--host", default="127.0.0.1")
     browser.add_argument("--port", type=int, default=8765)
