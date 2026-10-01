@@ -196,7 +196,17 @@ def write_relink_map(
     search_root: str | Path,
     output_path: str | Path,
 ) -> Path:
+    bundle_dir = Path(bundle_dir).resolve()
     output_path = Path(output_path).resolve()
+    try:
+        output_path.relative_to(bundle_dir)
+    except ValueError:
+        pass
+    else:
+        raise SourceRecoveryError(
+            "relink map output must be outside the Evidence Bundle"
+        )
+
     payload = recover_sources(bundle_dir, search_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
