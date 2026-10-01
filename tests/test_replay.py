@@ -1,4 +1,5 @@
 from array import array
+import hashlib
 import json
 from pathlib import Path
 import wave
@@ -111,3 +112,39 @@ def test_replay_output_must_stay_outside_bundle(tmp_path: Path):
             audio_root,
             output_path=bundle / "replayed.wav",
         )
+
+
+def _rehash_manifest_entry(bundle: Path, relative_path: str) -> None:
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    target = bundle / relative_path
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+
+    for item in manifest["files"]:
+        if item["path"] == relative_path:
+            item["sha256"] = digest
+            item["bytes"] = target.stat().st_size
+            break
+    else:
+        raise AssertionError(f"missing manifest entry: {relative_path}")
+
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_replay_detects_semantic_decision_drift_after_rehash(tmp_path: Path):
+    bundle, audio_root = _bundle(tmp_path)
+
+    decision_path = bundle / "decision.json"
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    decision["reason"] = "rewritten reason"
+    decision_path.write_text(
+        json.dumps(decision, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _rehash_manifest_entry(bundle, "decision.json")
+
+    with pytest.raises(EvidenceReplayError, match="reason does not match"):
+        replay_evidence_bundle(bundle, audio_root)
