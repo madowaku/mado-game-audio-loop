@@ -276,6 +276,23 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
             raise EvidenceBundleError(f"bundle file hash changed: {relative}")
         verified += 1
 
+    actual_payloads = {
+        path.relative_to(bundle_dir).as_posix()
+        for path in bundle_dir.rglob("*")
+        if path.is_file() and path.name != "manifest.json"
+    }
+    if actual_payloads != seen_paths:
+        unexpected = sorted(actual_payloads - seen_paths)
+        missing_from_disk = sorted(seen_paths - actual_payloads)
+        details: list[str] = []
+        if unexpected:
+            details.append("untracked=" + ",".join(unexpected))
+        if missing_from_disk:
+            details.append("missing=" + ",".join(missing_from_disk))
+        raise EvidenceBundleError(
+            "bundle payload set does not match manifest: " + "; ".join(details)
+        )
+
     return {
         "ok": True,
         "files_verified": verified,
