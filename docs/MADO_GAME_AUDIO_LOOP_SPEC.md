@@ -349,6 +349,73 @@ Verification checks:
 - output paths cannot escape intended roots
 - Python tests and browser JavaScript checks remain green
 
+### MGAL-M0.6 Evidence Replay
+
+Goal:
+
+**Prove that a saved Evidence Bundle can still be reproduced from the current source library.**
+
+Command:
+
+```bash
+mgal replay-bundle ./evidence/session-001 \
+  --audio-root ./audio
+```
+
+Optional regenerated output:
+
+```bash
+mgal replay-bundle ./evidence/session-001 \
+  --audio-root ./audio \
+  --output ./replays/session-001.wav
+```
+
+Replay stages:
+
+```text
+Evidence Bundle
+   ↓
+strict manifest verification
+   ↓
+semantic chain validation
+   ↓
+source-index ↔ Candidate Board source-set validation
+   ↓
+current source SHA-256 verification
+   ↓
+selected Recipe re-render
+   ↓
+stored output.wav ↔ replayed WAV hash comparison
+```
+
+Semantic chain validation requires:
+
+- manifest selected candidate ID matches Candidate Board
+- selected-recipe ID and Recipe body match the selected Board candidate
+- decision selected candidate ID matches
+- decision status is `selected`
+- decision reason, parent, revision, and lineage match the selected Board candidate
+
+Source replay requires the exact source path set from the Candidate Board. Missing, extra, changed-size, or changed-hash source files fail replay.
+
+The regenerated WAV must match stored `output.wav` in byte size and SHA-256.
+
+The Evidence Bundle is read-only during replay. Optional replay output must be outside the bundle.
+
+M0.6 verifies integrity and reproducibility. It does not provide cryptographic signing or provenance authenticity against a coordinated rewrite of the whole bundle.
+
+#### M0.6 acceptance
+
+- untouched bundle + original sources replays byte-identically
+- changed source hash is detected
+- missing source is detected
+- untracked bundle payload is detected
+- rehashed but semantically inconsistent decision evidence is detected
+- selected Recipe must match Candidate Board
+- source-index source set must match Candidate Board
+- optional replay output is written only outside the Evidence Bundle
+- Python tests and browser JavaScript checks remain green
+
 ## Later provider architecture
 
 \`\`\`text
