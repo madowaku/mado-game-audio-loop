@@ -2,33 +2,20 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work from “find something and drop it in” into a reproducible loop:
 
-**scan → audition → layer → mix → fork → compare → decide → bundle → verify → reuse**
+**scan → audition → layer → mix → fork → compare → decide → bundle → replay → reuse**
 
-## Current milestone: M0.5 Evidence Bundle
+## Current milestone: M0.6 Evidence Replay
 
-MGAL can now freeze a completed A/B/C sound-design decision into an inspectable evidence package.
+MGAL can now prove that an Evidence Bundle is still reproducible against a current source library.
 
-The bundle records:
+Replay verifies four linked layers:
 
-- the original intent
-- every source file actually referenced by the Base Recipe or candidates
-- source WAV metadata and SHA-256 fingerprints
-- the full Candidate Board
-- each candidate Recipe
-- the selected Recipe
-- the selected decision and reason
-- a rendered WAV of the selected Recipe
-- a manifest containing hashes and sizes for every payload file
+- the Evidence Bundle payload set and manifest hashes
+- the Candidate Board / selected Recipe / decision semantic chain
+- every referenced source WAV against the stored source fingerprint
+- a fresh deterministic render against the stored `output.wav`
 
-This turns “B sounded best” into a durable artifact that answers:
-
-- Which candidate was selected?
-- Why was it selected?
-- Which sources were involved?
-- Which exact source bytes were used?
-- What Recipe produced the final WAV?
-- Has any evidence file changed since the bundle was created?
-
+A successful replay means the current source files can reproduce the selected sound byte-for-byte.
 ## Quick start
 
 ```bash
@@ -47,10 +34,25 @@ mgal bundle ~/Downloads/heavy-slash-base-candidates.json \
   --output ./evidence/session-001
 ```
 
-Verify it later:
+Verify bundle integrity later:
 
 ```bash
 mgal verify-bundle ./evidence/session-001
+```
+
+Replay the evidence against the current source library:
+
+```bash
+mgal replay-bundle ./evidence/session-001 \
+  --audio-root ./audio
+```
+
+Optionally save the regenerated WAV outside the bundle:
+
+```bash
+mgal replay-bundle ./evidence/session-001 \
+  --audio-root ./audio \
+  --output ./replays/session-001.wav
 ```
 
 ## Evidence Bundle layout
@@ -121,6 +123,21 @@ The manifest contains one entry for every payload file except the manifest itsel
 
 Any changed payload file causes verification to fail.
 
+## Evidence Replay contract
+
+`mgal replay-bundle` first runs normal bundle verification, then:
+
+1. validates the Candidate Board and selected candidate
+2. confirms `manifest.json`, `candidate-board.json`, `selected-recipe.json`, and `decision.json` agree on the selected candidate
+3. confirms the source-index path set exactly matches all sources referenced by the Base Recipe and candidates
+4. verifies current source byte sizes and SHA-256 values
+5. re-renders the selected Recipe in a temporary directory
+6. compares regenerated WAV byte size and SHA-256 with stored `output.wav`
+
+Replay output is read-only by default. `--output` may write a copy outside the Evidence Bundle.
+
+This is an integrity and reproducibility check, not a cryptographic signature. A coordinated rewrite of the entire bundle and manifest is outside M0.6's authenticity guarantees.
+
 ## Candidate workflow
 
 ```text
@@ -154,6 +171,7 @@ mgal validate recipe.json
 mgal validate-board candidates.json
 mgal bundle candidates.json --audio-root ./audio --output ./evidence/session-001
 mgal verify-bundle ./evidence/session-001
+mgal replay-bundle ./evidence/session-001 --audio-root ./audio
 mgal render recipe.json --audio-root ./audio --output output.wav
 mgal serve ./audio --no-browser
 ```
@@ -196,7 +214,7 @@ Freezes the decision into an auditable package:
 
 ## Current constraints
 
-M0.5 stays intentionally compact:
+M0.6 stays intentionally compact:
 
 - WAV library only
 - local machine only
