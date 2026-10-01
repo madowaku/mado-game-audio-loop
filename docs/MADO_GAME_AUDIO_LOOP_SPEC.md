@@ -2,7 +2,7 @@
 
 Version: 0.1  
 Status: Draft  
-Project: `mado-game-audio-loop`  
+Project: \`mado-game-audio-loop\`  
 Codename: MGAL
 
 ## One sentence
@@ -11,7 +11,7 @@ Game SFX should be a reproducible creative loop, not a folder-diving chore.
 
 ## Core loop
 
-```text
+\`\`\`text
 Intent
   ↓
 Source
@@ -20,7 +20,7 @@ Layer / Transform
   ↓
 Audition
   ↓
-Compare
+Mix / Compare
   ↓
 Select
   ↓
@@ -31,7 +31,7 @@ Render
 Game
   ↓
 Evidence
-```
+\`\`\`
 
 ## Product principles
 
@@ -45,47 +45,30 @@ Evidence
 
 A solo or small-team game developer who can build the game but currently chooses or places sound effects ad hoc.
 
-## M0 goal
-
-Create a local workbench that can:
-
-- scan local audio
-- validate a recipe
-- rapidly audition candidate sounds
-- combine 2–4 layers
-- control gain and offset
-- render deterministic WAV output
-- preserve enough metadata to reproduce the result
-
-## Non-goals for v0.x
-
-- DAW replacement
-- music composition
-- mastering suite
-- mandatory cloud generation
-- automatic creative judgment
-- full Unity/Godot/CRIWARE integration
-
 ## Core data model
 
 A recipe is the source of truth.
 
-```json
+\`\`\`json
 {
   "recipe_version": "0.1",
   "id": "sword-slash-heavy-001",
   "intent": "heavy metallic sword slash",
-  "duration_target_ms": 450,
   "layers": [
     {
       "source": "cloth.wav",
-      "gain": 0.35,
+      "gain": 0.55,
       "offset_ms": 0
     },
     {
       "source": "metal.wav",
-      "gain": 0.30,
+      "gain": 0.80,
       "offset_ms": 25
+    },
+    {
+      "source": "whoosh.wav",
+      "gain": 0.40,
+      "offset_ms": 10
     }
   ],
   "processing": {
@@ -93,147 +76,168 @@ A recipe is the source of truth.
     "fade_out_ms": 80
   }
 }
-```
+\`\`\`
 
 ## Milestones
 
 ### MGAL-M0.1 Local Audio Workbench
 
-Deliverables:
+Established:
 
-- Python package
-- CLI
-- recipe schema + validation
+- Python package and CLI
+- recipe validation
 - WAV scanner
-- deterministic WAV renderer
-- fixture recipe
-- tests
-
-Acceptance:
-
-- `mgal --help` works
-- `mgal validate <recipe>` succeeds for the fixture
-- `mgal scan <folder>` indexes WAV metadata
-- `mgal render <recipe> --output <wav>` emits a WAV file
-- tests pass without network access
+- deterministic layered renderer
+- fixtures and tests
 
 ### MGAL-M0.2 Browser Audition Board
 
-Goal:
+Established:
 
-**Replace “open files one by one” with a fast local visual audition surface.**
-
-Run:
-
-```bash
-mgal serve ./audio
-```
-
-Architecture:
-
-```text
-audio root
-   │
-   ├── WAV metadata scanner
-   │
-   ├── safe local audio endpoint
-   │
-   └── dependency-free browser UI
-            │
-            ├── search
-            ├── waveform
-            ├── play / stop
-            ├── shortlist
-            └── recipe draft
-```
-
-Browser features:
-
-- filename and relative path
-- duration
-- sample rate and channel count
-- lazy-loaded waveform
-- play / stop
-- stop-all
-- filename/path filtering
-- add/remove candidate layer
-- maximum four candidate layers
-- intent field
-- download recipe JSON
-
-Security boundary:
-
-- server binds to `127.0.0.1` by default
-- audio requests are resolved beneath the configured audio root
-- path traversal outside the audio root is rejected
-- UI has no external CDN/runtime dependency
-
-M0.2 acceptance:
-
-- `mgal serve <folder>` launches the board
-- `GET /api/audio` returns indexed WAVs
-- a WAV can be played in the browser
-- visible WAVs receive waveform previews
-- search filters the candidate board
-- up to four sources can be added to a recipe draft
-- recipe JSON can be downloaded
-- server path traversal has a contract test
-
-Not included in M0.2:
-
-- simultaneous layer playback
-- gain controls
-- offset controls
-- mute / solo
-- waveform trimming
-- server-side recipe persistence
-
-Those belong to M0.3.
+- safe local HTTP server
+- WAV metadata API
+- filename/path search
+- lazy waveform rendering
+- one-click audition
+- shortlist of up to four layers
+- recipe draft download
+- path traversal protection
 
 ### MGAL-M0.3 Layer Mixer
 
-Add:
+Goal:
 
-- gain
-- offset
-- mute / solo
-- 2–4 simultaneous layers
-- live preview
-- browser-side recipe mutation
+**Turn the shortlist into a playable sound recipe before leaving the browser.**
+
+Run:
+
+\`\`\`bash
+mgal serve ./audio
+\`\`\`
+
+Mixer flow:
+
+\`\`\`text
+candidate sounds
+      ↓
+selected layers
+      ↓
+Web Audio buffer cache
+      ↓
+sample-accurate scheduled starts
+      ↓
+per-layer gain nodes
+      ↓
+live mute / solo / gain
+      ↓
+offset rescheduling
+      ↓
+recipe JSON
+\`\`\`
+
+#### Controls
+
+Each selected layer exposes:
+
+- **Gain**: linear gain, 0.00× to 2.00×
+- **Offset**: 0–5000 ms
+- **Mute**: temporary audition exclusion
+- **Solo**: temporary audition isolation
+- **Remove**: remove layer from candidate mix
+
+Transport:
+
+- Preview mix
+- Replay mix
+- Stop
+- global Stop all for individual auditions and mix playback
+
+#### Persistence contract
+
+Saved to Recipe:
+
+\`\`\`text
+source
+gain
+offset_ms
+\`\`\`
+
+Not saved:
+
+\`\`\`text
+mute
+solo
+\`\`\`
+
+Mute and solo are listening tools, not creative source-of-truth decisions.
+
+#### Live behavior
+
+- gain changes update the active GainNode without restarting playback
+- mute/solo update active GainNodes without restarting playback
+- offset changes re-schedule the mix because source start time cannot be moved after scheduling
+- decoded AudioBuffers are cached for waveform display and repeated mix previews
+
+#### Downloaded Recipe rendering
+
+Browser recipes use paths relative to the served audio root.
+
+Therefore:
+
+\`\`\`bash
+mgal render recipe.json \
+  --audio-root ./audio \
+  --output output.wav
+\`\`\`
+
+The optional \`--audio-root\` makes recipe placement independent from source placement.
+
+#### M0.3 acceptance
+
+- 2–4 layers can be previewed together
+- gain is audible live
+- mute/solo are audible live
+- offset changes affect the next scheduled mix
+- downloaded recipe preserves gain and offset
+- renderer can resolve a downloaded recipe with \`--audio-root\`
+- browser JavaScript passes syntax checking in CI
+- Python contract tests remain green
 
 ### MGAL-M0.4 Candidate Board
 
-Add A/B/C candidate comparison and human decisions:
+Next candidate milestone:
 
-- favorite
-- reject
-- selected
-- free-text reason
+- duplicate a recipe into A/B/C variants
+- compare mixes without rebuilding layers
+- favorite / reject / select
+- free-text decision reason
+- preserve candidate lineage
 
 ### MGAL-M0.5 Evidence Bundle
 
 Persist:
 
-```text
+\`\`\`text
 evidence/<session>/
   intent.json
   source-index.json
+  candidates/
   recipe.json
   output.wav
   decision.json
-```
+\`\`\`
 
 ## Later provider architecture
 
-```text
+\`\`\`text
 SourceProvider
   ├── LocalFileProvider
   ├── GeneratedAudioProvider
   ├── RecordedAudioProvider
   └── RecipeProvider
-```
+\`\`\`
 
-Future AI audio generation should plug into this boundary.
+Future AI audio generation plugs into this boundary instead of owning the workflow.
 
 ## North star
 
