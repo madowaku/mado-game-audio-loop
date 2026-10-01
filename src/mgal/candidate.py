@@ -9,6 +9,7 @@ from .recipe import Recipe, RecipeError, parse_recipe
 
 
 ALLOWED_DECISIONS = {"undecided", "favorite", "reject", "selected"}
+ALLOWED_LINEAGE_ACTIONS = {"fork", "copy"}
 
 
 class CandidateBoardError(ValueError):
@@ -22,11 +23,19 @@ class CandidateDecision:
 
 
 @dataclass(frozen=True)
+class LineageEvent:
+    from_recipe_id: str
+    action: str
+    revision: int
+
+
+@dataclass(frozen=True)
 class CandidateSnapshot:
     id: str
     label: str
     parent_recipe_id: str
     revision: int
+    lineage: tuple[LineageEvent, ...]
     recipe: Recipe
     decision: CandidateDecision
 
@@ -48,6 +57,57 @@ def _require(data: dict[str, Any], key: str, expected_type: type) -> Any:
     if not isinstance(value, expected_type):
         raise CandidateBoardError(f"{key} must be {expected_type.__name__}")
     return value
+
+
+def _parse_lineage(
+    candidate_id: str,
+    parent_recipe_id: str,
+    revision: int,
+    raw_lineage: list[Any],
+) -> tuple[LineageEvent, ...]:
+    if not raw_lineage:
+        raise CandidateBoardError(f"{candidate_id}: lineage must not be empty")
+
+    events: list[LineageEvent] = []
+    previous_revision = 0
+
+    for index, raw_event in enumerate(raw_lineage):
+        if not isinstance(raw_event, dict):
+            raise CandidateBoardError(
+                f"{candidate_id}: lineage[{index}] must be an object"
+            )
+        from_recipe_id = _require(raw_event, "from_recipe_id", str)
+        action = _require(raw_event, "action", str)
+        event_revision = _require(raw_event, "revision", int)
+
+        if action not in ALLOWED_LINEAGE_ACTIONS:
+            raise CandidateBoardError(
+                f"{candidate_id}: unsupported lineage action: {action}"
+            )
+        if event_revision <= previous_revision:
+            raise CandidateBoardError(
+                f"{candidate_id}: lineage revisions must increase"
+            )
+
+        events.append(
+            LineageEvent(
+                from_recipe_id=from_recipe_id,
+                action=action,
+                revision=event_revision,
+            )
+        )
+        previous_revision = event_revision
+
+    if events[-1].revision != revision:
+        raise CandidateBoardError(
+            f"{candidate_id}: last lineage revision must match candidate revision"
+        )
+    if events[-1].from_recipe_id != parent_recipe_id:
+        raise CandidateBoardError(
+            f"{candidate_id}: parent_recipe_id must match latest lineage source"
+        )
+
+    return tuple(events)
 
 
 def parse_candidate_board(data: dict[str, Any]) -> CandidateBoard:
@@ -78,6 +138,7 @@ def parse_candidate_board(data: dict[str, Any]) -> CandidateBoard:
         label = _require(item, "label", str)
         parent_recipe_id = _require(item, "parent_recipe_id", str)
         revision = _require(item, "revision", int)
+        raw_lineage = _require(item, "lineage", list)
         raw_recipe = _require(item, "recipe", dict)
         raw_decision = _require(item, "decision", dict)
 
@@ -85,6 +146,13 @@ def parse_candidate_board(data: dict[str, Any]) -> CandidateBoard:
             raise CandidateBoardError(f"duplicate candidate id: {candidate_id}")
         if revision < 1:
             raise CandidateBoardError(f"{candidate_id}: revision must be >= 1")
+
+        lineage = _parse_lineage(
+            candidate_id,
+            parent_recipe_id,
+            revision,
+            raw_lineage,
+        )
 
         try:
             recipe = parse_recipe(raw_recipe)
@@ -111,6 +179,7 @@ def parse_candidate_board(data: dict[str, Any]) -> CandidateBoard:
                 label=label,
                 parent_recipe_id=parent_recipe_id,
                 revision=revision,
+                lineage=lineage,
                 recipe=recipe,
                 decision=CandidateDecision(status=status, reason=reason),
             )
