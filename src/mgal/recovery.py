@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .evidence import EvidenceBundleError, verify_evidence_bundle
+
 
 class SourceRecoveryError(ValueError):
     pass
@@ -68,7 +70,13 @@ def recover_sources(
     if not search_root.is_dir():
         raise SourceRecoveryError(f"search root does not exist: {search_root}")
 
+    try:
+        verify_evidence_bundle(bundle_dir)
+    except EvidenceBundleError as exc:
+        raise SourceRecoveryError(f"bundle verification failed: {exc}") from exc
+
     source_index = _load_source_index(bundle_dir)
+    manifest_hash = _sha256(bundle_dir / "manifest.json")
     candidates_by_size = _scan_by_size(search_root)
     hash_cache: dict[Path, str] = {}
     mappings: list[dict[str, Any]] = []
@@ -172,6 +180,7 @@ def recover_sources(
 
     return {
         "relink_map_version": "0.1",
+        "bundle_manifest_sha256": manifest_hash,
         "search_root": ".",
         "source_count": len(mappings),
         "resolved_count": resolved,
@@ -200,6 +209,7 @@ def write_relink_map(
 def load_relink_map(
     path: str | Path,
     search_root: str | Path,
+    bundle_dir: str | Path | None = None,
 ) -> dict[str, Path]:
     path = Path(path).resolve()
     search_root = Path(search_root).resolve()
@@ -209,6 +219,18 @@ def load_relink_map(
         raise SourceRecoveryError("relink map must contain an object")
     if data.get("relink_map_version") != "0.1":
         raise SourceRecoveryError("unsupported relink_map_version")
+
+    manifest_hash = data.get("bundle_manifest_sha256")
+    if not isinstance(manifest_hash, str):
+        raise SourceRecoveryError("bundle_manifest_sha256 must be a string")
+    if bundle_dir is not None:
+        bundle_path = Path(bundle_dir).resolve()
+        current_manifest = bundle_path / "manifest.json"
+        if not current_manifest.is_file():
+            raise SourceRecoveryError("bundle manifest.json is missing")
+        if _sha256(current_manifest) != manifest_hash:
+            raise SourceRecoveryError("relink map belongs to a different Evidence Bundle")
+
     if data.get("complete") is not True:
         raise SourceRecoveryError("relink map is incomplete")
 
