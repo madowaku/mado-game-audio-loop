@@ -37,6 +37,13 @@ def test_candidate_board_loads(tmp_path: Path):
                         "label": "A",
                         "parent_recipe_id": base_id,
                         "revision": 1,
+                        "lineage": [
+                            {
+                                "from_recipe_id": base_id,
+                                "action": "fork",
+                                "revision": 1,
+                            }
+                        ],
                         "recipe": _recipe(a_id),
                         "decision": {"status": "favorite", "reason": "good body"},
                     },
@@ -45,6 +52,18 @@ def test_candidate_board_loads(tmp_path: Path):
                         "label": "B",
                         "parent_recipe_id": a_id + "@r1",
                         "revision": 2,
+                        "lineage": [
+                            {
+                                "from_recipe_id": base_id,
+                                "action": "fork",
+                                "revision": 1,
+                            },
+                            {
+                                "from_recipe_id": a_id + "@r1",
+                                "action": "copy",
+                                "revision": 2,
+                            },
+                        ],
                         "recipe": _recipe(b_id),
                         "decision": {"status": "selected", "reason": "clearer hit"},
                     },
@@ -80,6 +99,13 @@ def test_candidate_board_rejects_selected_id_mismatch(tmp_path: Path):
                         "label": "A",
                         "parent_recipe_id": base_id,
                         "revision": 1,
+                        "lineage": [
+                            {
+                                "from_recipe_id": base_id,
+                                "action": "fork",
+                                "revision": 1,
+                            }
+                        ],
                         "recipe": _recipe(a_id),
                         "decision": {"status": "selected", "reason": "winner"},
                     }
