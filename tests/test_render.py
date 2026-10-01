@@ -32,7 +32,7 @@ def test_render_two_layers(tmp_path: Path):
                 {"source": "a.wav", "gain": 1.0, "offset_ms": 0},
                 {"source": "b.wav", "gain": 1.0, "offset_ms": 0}
             ],
-            "processing": {"normalize": false, "fade_out_ms": 0}
+            "processing": {"normalize": False, "fade_out_ms": 0}
         }),
         encoding="utf-8",
     )
