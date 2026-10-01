@@ -14,9 +14,9 @@ class RenderError(ValueError):
 def _read_pcm16_mono(path: Path) -> tuple[int, array]:
     with wave.open(str(path), "rb") as wav:
         if wav.getsampwidth() != 2:
-            raise RenderError(f"{path}: only 16-bit PCM WAV is supported in M0.3")
+            raise RenderError(f"{path}: only 16-bit PCM WAV is supported in v0.x")
         if wav.getnchannels() != 1:
-            raise RenderError(f"{path}: only mono WAV is supported in M0.3")
+            raise RenderError(f"{path}: only mono WAV is supported in v0.x")
         sample_rate = wav.getframerate()
         samples = array("h")
         samples.frombytes(wav.readframes(wav.getnframes()))
@@ -43,7 +43,7 @@ def render_recipe(
         if common_rate is None:
             common_rate = rate
         elif rate != common_rate:
-            raise RenderError("all M0.3 layers must share one sample rate")
+            raise RenderError("all v0.x layers must share one sample rate")
 
         offset_frames = round(layer.offset_ms * rate / 1000)
         total_frames = max(total_frames, offset_frames + len(samples))
