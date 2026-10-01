@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .audio import scan_audio
+from .candidate import load_candidate_board
 from .recipe import load_recipe
 from .render import render_recipe
 from .server import serve
@@ -16,6 +17,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate", help="Validate a recipe JSON file")
     validate.add_argument("recipe")
+
+    validate_board = sub.add_parser(
+        "validate-board",
+        help="Validate a Candidate Board JSON file",
+    )
+    validate_board.add_argument("board")
 
     scan = sub.add_parser("scan", help="Scan a folder for supported audio files")
     scan.add_argument("folder")
@@ -44,6 +51,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "validate":
         recipe = load_recipe(args.recipe)
         print(json.dumps({"ok": True, "id": recipe.id, "layers": len(recipe.layers)}))
+        return 0
+
+    if args.command == "validate-board":
+        board = load_candidate_board(args.board)
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "base_id": board.base_recipe.id,
+                    "candidates": len(board.candidates),
+                    "selected_candidate_id": board.selected_candidate_id,
+                }
+            )
+        )
         return 0
 
     if args.command == "scan":
