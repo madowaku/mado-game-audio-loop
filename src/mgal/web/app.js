@@ -4,6 +4,10 @@ const state = {
   mixVoices: [],
   bufferCache: new Map(),
   mixRestartTimer: null,
+  previewOwner: null,
+  candidates: [],
+  activeCandidateId: null,
+  boardBaseRecipe: null,
 };
 
 const list = document.querySelector("#audio-list");
@@ -17,6 +21,11 @@ const downloadRecipe = document.querySelector("#download-recipe");
 const intent = document.querySelector("#intent");
 const previewMixButton = document.querySelector("#preview-mix");
 const stopMixButton = document.querySelector("#stop-mix");
+const seedCandidatesButton = document.querySelector("#seed-candidates");
+const candidateBoard = document.querySelector("#candidate-board");
+const candidateHelp = document.querySelector("#candidate-help");
+const downloadBoardButton = document.querySelector("#download-board");
+const mixerTitle = document.querySelector("#mixer-title");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -34,6 +43,62 @@ function escapeRecipeId(value) {
     .replace(/^-+|-+$/g, "") || "sound-effect";
 }
 
+function selectedCandidate() {
+  return state.candidates.find(function (candidate) {
+    return candidate.id === state.activeCandidateId;
+  }) || null;
+}
+
+function setSelected(layers) {
+  state.selected = layers;
+  const candidate = selectedCandidate();
+  if (candidate) candidate.layers = layers;
+}
+
+function cloneLayer(layer) {
+  return {
+    sound: layer.sound,
+    gain: layer.gain,
+    offset_ms: layer.offset_ms,
+    muted: false,
+    solo: false,
+  };
+}
+
+function cloneLayers(layers) {
+  return layers.map(cloneLayer);
+}
+
+function persistedLayer(layer) {
+  return {
+    source: layer.sound.relative_path,
+    gain: Number(layer.gain.toFixed(3)),
+    offset_ms: layer.offset_ms,
+  };
+}
+
+function recipePayloadForLayers(layers, idOverride) {
+  const intentValue = intent.value.trim() || "game sound effect";
+  return {
+    recipe_version: "0.1",
+    id: idOverride || escapeRecipeId(intentValue),
+    intent: intentValue,
+    layers: layers.map(persistedLayer),
+    processing: {
+      normalize: true,
+      fade_out_ms: 0,
+    },
+  };
+}
+
+function recipePayload() {
+  const candidate = selectedCandidate();
+  return recipePayloadForLayers(
+    state.selected,
+    candidate ? candidate.id : null
+  );
+}
+
 function stopIndividualAuditions() {
   document.querySelectorAll("audio").forEach(function (audio) {
     audio.pause();
@@ -41,6 +106,13 @@ function stopIndividualAuditions() {
   });
   document.querySelectorAll(".play").forEach(function (button) {
     button.textContent = "▶ Play";
+  });
+}
+
+function resetPreviewLabels() {
+  previewMixButton.textContent = "▶ Preview mix";
+  document.querySelectorAll(".candidate-preview").forEach(function (button) {
+    button.textContent = "▶ Preview";
   });
 }
 
@@ -52,13 +124,15 @@ function stopMix() {
 
   state.mixVoices.forEach(function (voice) {
     try {
+      voice.source.onended = null;
       voice.source.stop();
     } catch (error) {
       // Already stopped.
     }
   });
   state.mixVoices = [];
-  previewMixButton.textContent = "▶ Preview mix";
+  state.previewOwner = null;
+  resetPreviewLabels();
   stopMixButton.disabled = true;
 }
 
@@ -125,48 +199,50 @@ const waveformObserver = new IntersectionObserver(function (entries) {
   });
 }, { rootMargin: "220px" });
 
-function hasSoloLayer() {
-  return state.selected.some(function (layer) {
+function hasSoloLayer(layers) {
+  return layers.some(function (layer) {
     return layer.solo;
   });
 }
 
-function isLayerAudible(layer) {
+function isLayerAudible(layer, layers) {
   if (layer.muted) return false;
-  return !hasSoloLayer() || layer.solo;
+  return !hasSoloLayer(layers) || layer.solo;
 }
 
-function effectiveGain(layer) {
-  return isLayerAudible(layer) ? layer.gain : 0;
+function effectiveGain(layer, layers) {
+  return isLayerAudible(layer, layers) ? layer.gain : 0;
 }
 
 function applyLiveGains() {
+  if (state.previewOwner !== "mixer") return;
   state.mixVoices.forEach(function (voice) {
     const layer = state.selected.find(function (candidate) {
       return candidate.sound.relative_path === voice.path;
     });
     if (!layer) return;
     voice.gainNode.gain.setTargetAtTime(
-      effectiveGain(layer),
+      effectiveGain(layer, state.selected),
       audioContext.currentTime,
       0.01
     );
   });
 }
 
-async function previewMix() {
-  if (state.selected.length === 0) return;
+async function playLayerSet(layers, options) {
+  if (layers.length === 0) return;
 
   stopIndividualAuditions();
   stopMix();
   await audioContext.resume();
 
-  previewMixButton.disabled = true;
-  previewMixButton.textContent = "Loading…";
+  const owner = options.owner;
+  const respectAudition = options.respectAudition;
+  state.previewOwner = owner;
 
   try {
     const loaded = await Promise.all(
-      state.selected.map(async function (layer) {
+      layers.map(async function (layer) {
         return {
           layer: layer,
           buffer: await getAudioBuffer(layer.sound.url),
@@ -179,7 +255,9 @@ async function previewMix() {
       const source = audioContext.createBufferSource();
       const gainNode = audioContext.createGain();
       source.buffer = entry.buffer;
-      gainNode.gain.value = effectiveGain(entry.layer);
+      gainNode.gain.value = respectAudition
+        ? effectiveGain(entry.layer, layers)
+        : entry.layer.gain;
       source.connect(gainNode);
       gainNode.connect(audioContext.destination);
       source.start(startAt + entry.layer.offset_ms / 1000);
@@ -194,25 +272,45 @@ async function previewMix() {
           return candidate.source !== source;
         });
         if (state.mixVoices.length === 0) {
-          previewMixButton.textContent = "▶ Preview mix";
+          state.previewOwner = null;
+          resetPreviewLabels();
           stopMixButton.disabled = true;
         }
       };
       return voice;
     });
 
-    previewMixButton.textContent = "↻ Replay mix";
     stopMixButton.disabled = false;
   } catch (error) {
-    status.textContent = "Mix preview failed: " + error.message;
+    status.textContent = "Preview failed: " + error.message;
     stopMix();
-  } finally {
-    previewMixButton.disabled = state.selected.length === 0;
   }
 }
 
+async function previewMix() {
+  if (state.selected.length === 0) return;
+  previewMixButton.disabled = true;
+  previewMixButton.textContent = "Loading…";
+  await playLayerSet(state.selected, {
+    owner: "mixer",
+    respectAudition: true,
+  });
+  if (state.previewOwner === "mixer") previewMixButton.textContent = "↻ Replay mix";
+  previewMixButton.disabled = state.selected.length === 0;
+}
+
+async function previewCandidate(candidate) {
+  const button = document.querySelector('[data-candidate-preview="' + candidate.id + '"]');
+  if (button) button.textContent = "Loading…";
+  await playLayerSet(candidate.layers, {
+    owner: candidate.id,
+    respectAudition: false,
+  });
+  if (state.previewOwner === candidate.id && button) button.textContent = "■ Playing";
+}
+
 function scheduleMixRestart() {
-  if (state.mixVoices.length === 0) return;
+  if (state.mixVoices.length === 0 || state.previewOwner !== "mixer") return;
   if (state.mixRestartTimer) clearTimeout(state.mixRestartTimer);
   state.mixRestartTimer = setTimeout(function () {
     state.mixRestartTimer = null;
@@ -274,6 +372,7 @@ function renderSounds(sounds) {
       if (exists || state.selected.length >= 4) return;
       state.selected.push(makeLayer(sound));
       renderRecipe();
+      renderCandidates();
     });
 
     card.dataset.search = (sound.name + " " + sound.relative_path).toLowerCase();
@@ -332,11 +431,12 @@ function renderLayer(layer) {
   remove.type = "button";
   remove.textContent = "Remove";
   remove.addEventListener("click", function () {
-    state.selected = state.selected.filter(function (candidate) {
+    setSelected(state.selected.filter(function (candidate) {
       return candidate.sound.relative_path !== layer.sound.relative_path;
-    });
+    }));
     stopMix();
     renderRecipe();
+    renderCandidates();
   });
 
   actions.append(mute, solo, remove);
@@ -357,6 +457,7 @@ function renderLayer(layer) {
     layer.gain = Number(gainSlider.value);
     gainValue.textContent = layer.gain.toFixed(2) + "×";
     applyLiveGains();
+    renderCandidates();
   });
   gainControl.append(addControlLabel("Gain"), gainSlider, gainValue);
 
@@ -374,6 +475,7 @@ function renderLayer(layer) {
     layer.offset_ms = Math.round(value);
     offsetInput.value = String(layer.offset_ms);
     scheduleMixRestart();
+    renderCandidates();
   });
   const offsetUnit = document.createElement("span");
   offsetUnit.className = "layer-value";
@@ -398,10 +500,14 @@ function renderRecipe() {
     });
   }
 
+  const candidate = selectedCandidate();
+  mixerTitle.textContent = candidate ? "Candidate " + candidate.label : "Base recipe";
   layerCount.textContent = String(state.selected.length) + " / 4";
   downloadRecipe.disabled = state.selected.length === 0;
   previewMixButton.disabled = state.selected.length === 0;
-  stopMixButton.disabled = state.selected.length === 0 || state.mixVoices.length === 0;
+  seedCandidatesButton.disabled = state.selected.length === 0 || state.candidates.length > 0;
+  stopMixButton.disabled = state.mixVoices.length === 0;
+  downloadBoardButton.disabled = state.candidates.length === 0;
 
   document.querySelectorAll(".audio-card").forEach(function (card) {
     const path = card.querySelector(".file-path").textContent;
@@ -414,37 +520,270 @@ function renderRecipe() {
   });
 }
 
-function recipePayload() {
-  const intentValue = intent.value.trim() || "game sound effect";
+function seedCandidates() {
+  if (state.selected.length === 0) return;
+
+  const base = recipePayloadForLayers(state.selected, escapeRecipeId(intent.value) + "-base");
+  state.boardBaseRecipe = base;
+  state.candidates = ["A", "B", "C"].map(function (label) {
+    return {
+      id: base.id + "-" + label.toLowerCase(),
+      label: label,
+      parent_recipe_id: base.id,
+      revision: 1,
+      layers: cloneLayers(state.selected),
+      decision: "undecided",
+      reason: "",
+    };
+  });
+
+  state.activeCandidateId = state.candidates[0].id;
+  state.selected = state.candidates[0].layers;
+  stopMix();
+  renderRecipe();
+  renderCandidates();
+}
+
+function loadCandidate(candidateId) {
+  const candidate = state.candidates.find(function (item) {
+    return item.id === candidateId;
+  });
+  if (!candidate) return;
+  stopMix();
+  state.activeCandidateId = candidate.id;
+  state.selected = candidate.layers;
+  renderRecipe();
+  renderCandidates();
+}
+
+function copyActiveInto(targetId) {
+  const source = selectedCandidate();
+  const target = state.candidates.find(function (candidate) {
+    return candidate.id === targetId;
+  });
+  if (!source || !target || source.id === target.id) return;
+
+  target.layers = cloneLayers(source.layers);
+  target.parent_recipe_id = source.id;
+  target.revision = source.revision + 1;
+  target.decision = "undecided";
+  target.reason = "";
+  renderCandidates();
+}
+
+function setCandidateDecision(candidateId, decision) {
+  const candidate = state.candidates.find(function (item) {
+    return item.id === candidateId;
+  });
+  if (!candidate) return;
+
+  if (decision === "selected") {
+    state.candidates.forEach(function (item) {
+      if (item.decision === "selected") item.decision = "undecided";
+    });
+  }
+
+  candidate.decision = candidate.decision === decision ? "undecided" : decision;
+  renderCandidates();
+}
+
+function candidateDeltaCount(candidate) {
+  if (!state.boardBaseRecipe) return 0;
+  const baseLayers = state.boardBaseRecipe.layers;
+  const candidateLayers = candidate.layers.map(persistedLayer);
+  const maxLength = Math.max(baseLayers.length, candidateLayers.length);
+  let changes = 0;
+
+  for (let i = 0; i < maxLength; i += 1) {
+    const base = baseLayers[i];
+    const current = candidateLayers[i];
+    if (!base || !current) {
+      changes += 1;
+      continue;
+    }
+    if (base.source !== current.source) changes += 1;
+    if (base.gain !== current.gain) changes += 1;
+    if (base.offset_ms !== current.offset_ms) changes += 1;
+  }
+
+  return changes;
+}
+
+function decisionButton(candidate, decision, label, className) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className =
+    "candidate-action " +
+    className +
+    (candidate.decision === decision ? " active" : "");
+  button.textContent = label;
+  button.addEventListener("click", function () {
+    setCandidateDecision(candidate.id, decision);
+  });
+  return button;
+}
+
+function renderCandidateCard(candidate) {
+  const card = document.createElement("article");
+  card.className =
+    "candidate-card" +
+    (candidate.id === state.activeCandidateId ? " active" : "") +
+    (candidate.decision === "selected" ? " selected" : "");
+
+  const head = document.createElement("div");
+  head.className = "candidate-card-head";
+
+  const title = document.createElement("div");
+  title.className = "candidate-title";
+
+  const label = document.createElement("span");
+  label.className = "candidate-label";
+  label.textContent = candidate.label;
+
+  const titleMeta = document.createElement("div");
+  const badge = document.createElement("span");
+  badge.className = "candidate-badge";
+  badge.textContent = candidate.decision;
+  const lineage = document.createElement("div");
+  lineage.className = "candidate-meta";
+  lineage.textContent =
+    "parent: " + candidate.parent_recipe_id + " · rev " + String(candidate.revision);
+  titleMeta.append(badge, lineage);
+  title.append(label, titleMeta);
+
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.className = "candidate-action";
+  edit.textContent = candidate.id === state.activeCandidateId ? "Editing" : "Edit";
+  edit.disabled = candidate.id === state.activeCandidateId;
+  edit.addEventListener("click", function () {
+    loadCandidate(candidate.id);
+  });
+
+  head.append(title, edit);
+
+  const delta = document.createElement("div");
+  delta.className = "candidate-delta";
+  const changes = candidateDeltaCount(candidate);
+  delta.textContent =
+    String(candidate.layers.length) +
+    " layers · " +
+    String(changes) +
+    (changes === 1 ? " change" : " changes") +
+    " vs base";
+
+  const actions = document.createElement("div");
+  actions.className = "candidate-actions";
+
+  const preview = document.createElement("button");
+  preview.type = "button";
+  preview.className = "candidate-action candidate-preview";
+  preview.dataset.candidatePreview = candidate.id;
+  preview.textContent = state.previewOwner === candidate.id ? "■ Playing" : "▶ Preview";
+  preview.addEventListener("click", function () {
+    if (state.previewOwner === candidate.id) {
+      stopMix();
+      return;
+    }
+    previewCandidate(candidate);
+  });
+
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "candidate-action";
+  copy.textContent = "Copy active → " + candidate.label;
+  copy.disabled = !state.activeCandidateId || state.activeCandidateId === candidate.id;
+  copy.addEventListener("click", function () {
+    copyActiveInto(candidate.id);
+  });
+
+  actions.append(preview, copy);
+
+  const decisions = document.createElement("div");
+  decisions.className = "candidate-decisions";
+  decisions.append(
+    decisionButton(candidate, "favorite", "★ Favorite", "decision-favorite"),
+    decisionButton(candidate, "reject", "× Reject", "decision-reject"),
+    decisionButton(candidate, "selected", "✓ Select", "decision-selected")
+  );
+
+  const reason = document.createElement("textarea");
+  reason.className = "candidate-reason";
+  reason.placeholder = "Why does this candidate work or fail?";
+  reason.value = candidate.reason;
+  reason.addEventListener("input", function () {
+    candidate.reason = reason.value;
+  });
+
+  card.append(head, delta, actions, decisions, reason);
+  return card;
+}
+
+function renderCandidates() {
+  candidateBoard.replaceChildren();
+
+  if (state.candidates.length === 0) {
+    candidateHelp.hidden = false;
+    downloadBoardButton.disabled = true;
+    return;
+  }
+
+  candidateHelp.hidden = true;
+  state.candidates.forEach(function (candidate) {
+    candidateBoard.appendChild(renderCandidateCard(candidate));
+  });
+  downloadBoardButton.disabled = false;
+}
+
+function boardPayload() {
+  const selected = state.candidates.find(function (candidate) {
+    return candidate.decision === "selected";
+  });
   return {
-    recipe_version: "0.1",
-    id: escapeRecipeId(intentValue),
-    intent: intentValue,
-    layers: state.selected.map(function (layer) {
+    candidate_board_version: "0.1",
+    intent: intent.value.trim() || "game sound effect",
+    base_recipe: state.boardBaseRecipe,
+    active_candidate_id: state.activeCandidateId,
+    selected_candidate_id: selected ? selected.id : null,
+    candidates: state.candidates.map(function (candidate) {
       return {
-        source: layer.sound.relative_path,
-        gain: Number(layer.gain.toFixed(3)),
-        offset_ms: layer.offset_ms,
+        id: candidate.id,
+        label: candidate.label,
+        parent_recipe_id: candidate.parent_recipe_id,
+        revision: candidate.revision,
+        recipe: recipePayloadForLayers(candidate.layers, candidate.id),
+        decision: {
+          status: candidate.decision,
+          reason: candidate.reason,
+        },
       };
     }),
-    processing: {
-      normalize: true,
-      fade_out_ms: 0,
-    },
   };
 }
 
-downloadRecipe.addEventListener("click", function () {
-  const payload = recipePayload();
+function downloadJson(payload, filename) {
   const blob = new Blob([JSON.stringify(payload, null, 2) + "\n"], {
     type: "application/json",
   });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = payload.id + ".json";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+downloadRecipe.addEventListener("click", function () {
+  const payload = recipePayload();
+  downloadJson(payload, payload.id + ".json");
 });
+
+downloadBoardButton.addEventListener("click", function () {
+  const payload = boardPayload();
+  const baseId = payload.base_recipe ? payload.base_recipe.id : "candidate-board";
+  downloadJson(payload, baseId + "-candidates.json");
+});
+
+seedCandidatesButton.addEventListener("click", seedCandidates);
 
 filter.addEventListener("input", function () {
   const query = filter.value.trim().toLowerCase();
@@ -464,6 +803,7 @@ async function boot() {
     state.sounds = await response.json();
     renderSounds(state.sounds);
     renderRecipe();
+    renderCandidates();
     status.textContent =
       String(state.sounds.length) +
       " WAV file" +
