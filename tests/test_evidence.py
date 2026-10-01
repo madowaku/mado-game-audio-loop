@@ -141,3 +141,18 @@ def test_bundle_requires_selected_candidate(tmp_path: Path):
 
     with pytest.raises(EvidenceBundleError):
         build_evidence_bundle(board_path, audio_root, tmp_path / "bundle")
+
+
+def test_verify_rejects_untracked_bundle_payload(tmp_path: Path):
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    _write_wav(audio_root / "metal.wav", 400)
+    _write_wav(audio_root / "impact.wav", 900)
+    board_path = tmp_path / "board.json"
+    board_path.write_text(json.dumps(_board()), encoding="utf-8")
+
+    bundle = build_evidence_bundle(board_path, audio_root, tmp_path / "bundle")
+    (bundle / "extra.txt").write_text("not in manifest\n", encoding="utf-8")
+
+    with pytest.raises(EvidenceBundleError, match="payload set"):
+        verify_evidence_bundle(bundle)
