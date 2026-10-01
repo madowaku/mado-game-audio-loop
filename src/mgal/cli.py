@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .audio import scan_audio
 from .candidate import load_candidate_board
+from .evidence import build_evidence_bundle, verify_evidence_bundle
 from .recipe import load_recipe
 from .render import render_recipe
 from .server import serve
@@ -23,6 +24,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate a Candidate Board JSON file",
     )
     validate_board.add_argument("board")
+
+    bundle = sub.add_parser(
+        "bundle",
+        help="Build an Evidence Bundle from a selected Candidate Board",
+    )
+    bundle.add_argument("board", help="Candidate Board JSON file")
+    bundle.add_argument("--audio-root", required=True, help="Folder containing source WAV files")
+    bundle.add_argument("--output", "-o", required=True, help="Evidence Bundle output directory")
+
+    verify_bundle = sub.add_parser(
+        "verify-bundle",
+        help="Verify Evidence Bundle hashes and file sizes",
+    )
+    verify_bundle.add_argument("bundle_dir")
 
     scan = sub.add_parser("scan", help="Scan a folder for supported audio files")
     scan.add_argument("folder")
@@ -65,6 +80,19 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
         )
+        return 0
+
+    if args.command == "bundle":
+        output = build_evidence_bundle(
+            args.board,
+            args.audio_root,
+            args.output,
+        )
+        print(output)
+        return 0
+
+    if args.command == "verify-bundle":
+        print(json.dumps(verify_evidence_bundle(args.bundle_dir), indent=2))
         return 0
 
     if args.command == "scan":
