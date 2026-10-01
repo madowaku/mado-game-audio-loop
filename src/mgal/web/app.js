@@ -534,6 +534,13 @@ function seedCandidates() {
       layers: cloneLayers(state.selected),
       decision: "undecided",
       reason: "",
+      lineage: [
+        {
+          from_recipe_id: base.id,
+          action: "fork",
+          revision: 1,
+        },
+      ],
     };
   });
 
@@ -564,8 +571,13 @@ function copyActiveInto(targetId) {
   if (!source || !target || source.id === target.id) return;
 
   target.layers = cloneLayers(source.layers);
-  target.parent_recipe_id = source.id;
-  target.revision = source.revision + 1;
+  target.parent_recipe_id = source.id + "@r" + String(source.revision);
+  target.revision += 1;
+  target.lineage.push({
+    from_recipe_id: target.parent_recipe_id,
+    action: "copy",
+    revision: target.revision,
+  });
   target.decision = "undecided";
   target.reason = "";
   renderCandidates();
@@ -647,7 +659,12 @@ function renderCandidateCard(candidate) {
   const lineage = document.createElement("div");
   lineage.className = "candidate-meta";
   lineage.textContent =
-    "parent: " + candidate.parent_recipe_id + " · rev " + String(candidate.revision);
+    "parent: " +
+    candidate.parent_recipe_id +
+    " · rev " +
+    String(candidate.revision) +
+    " · hops " +
+    String(candidate.lineage.length);
   titleMeta.append(badge, lineage);
   title.append(label, titleMeta);
 
@@ -751,6 +768,7 @@ function boardPayload() {
         label: candidate.label,
         parent_recipe_id: candidate.parent_recipe_id,
         revision: candidate.revision,
+        lineage: candidate.lineage,
         recipe: recipePayloadForLayers(candidate.layers, candidate.id),
         decision: {
           status: candidate.decision,
