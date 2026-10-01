@@ -165,3 +165,14 @@ def test_relink_map_is_bound_to_bundle_manifest(tmp_path: Path):
 
     with pytest.raises(SourceRecoveryError, match="different Evidence Bundle"):
         load_relink_map(map_path, search, bundle_dir=other_bundle)
+
+
+def test_relink_map_output_must_stay_outside_bundle(tmp_path: Path):
+    bundle, original = _bundle(tmp_path)
+
+    with pytest.raises(SourceRecoveryError, match="outside"):
+        write_relink_map(
+            bundle,
+            original,
+            bundle / "relink-map.json",
+        )
