@@ -36,10 +36,7 @@ def _require(data: dict[str, Any], key: str, expected_type: type) -> Any:
     return value
 
 
-def load_recipe(path: str | Path) -> Recipe:
-    path = Path(path)
-    data = json.loads(path.read_text(encoding="utf-8"))
-
+def parse_recipe(data: dict[str, Any]) -> Recipe:
     version = _require(data, "recipe_version", str)
     recipe_id = _require(data, "id", str)
     intent = _require(data, "intent", str)
@@ -50,7 +47,7 @@ def load_recipe(path: str | Path) -> Recipe:
     if not raw_layers:
         raise RecipeError("layers must not be empty")
     if len(raw_layers) > 4:
-        raise RecipeError("M0.1 supports at most 4 layers")
+        raise RecipeError("MGAL v0.x supports at most 4 layers")
 
     layers: list[Layer] = []
     for index, item in enumerate(raw_layers):
@@ -84,3 +81,11 @@ def load_recipe(path: str | Path) -> Recipe:
         normalize=normalize,
         fade_out_ms=fade_out_ms,
     )
+
+
+def load_recipe(path: str | Path) -> Recipe:
+    path = Path(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise RecipeError("recipe document must be an object")
+    return parse_recipe(data)
