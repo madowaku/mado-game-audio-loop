@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from typing import Any
 
-from .candidate import load_candidate_board
+from .candidate import CandidateSnapshot, load_candidate_board
 from .evidence import EvidenceBundleError, verify_evidence_bundle
 from .recipe import load_recipe
 from .render import render_recipe
@@ -63,10 +63,23 @@ def _load_source_index(bundle_dir: Path) -> dict[str, Any]:
     return data
 
 
-def _expected_sources_from_board(bundle_dir: Path) -> tuple[set[str], str]:
+def _expected_sources_from_board(
+    bundle_dir: Path,
+) -> tuple[set[str], CandidateSnapshot]:
     board = load_candidate_board(bundle_dir / "candidate-board.json")
     if board.selected_candidate_id is None:
         raise EvidenceReplayError("bundle Candidate Board has no selected candidate")
+
+    selected_candidate = next(
+        (
+            candidate
+            for candidate in board.candidates
+            if candidate.id == board.selected_candidate_id
+        ),
+        None,
+    )
+    if selected_candidate is None:
+        raise EvidenceReplayError("selected candidate is missing from Candidate Board")
 
     expected: set[str] = set()
     recipes = [board.base_recipe] + [candidate.recipe for candidate in board.candidates]
@@ -74,7 +87,7 @@ def _expected_sources_from_board(bundle_dir: Path) -> tuple[set[str], str]:
         for layer in recipe.layers:
             expected.add(layer.source)
 
-    return expected, board.selected_candidate_id
+    return expected, selected_candidate
 
 
 def _verify_sources(
@@ -85,22 +98,7 @@ def _verify_sources(
     verified: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    indexed_paths = {
-        item.get("relative_path")
-        for item in source_index["sources"]
-        if isinstance(item, dict)
-    }
-    if indexed_paths != expected_sources:
-        missing = sorted(expected_sources - indexed_paths)
-        unexpected = sorted(indexed_paths - expected_sources)
-        details: list[str] = []
-        if missing:
-            details.append("missing=" + ",".join(missing))
-        if unexpected:
-            details.append("unexpected=" + ",".join(unexpected))
-        raise EvidenceReplayError(
-            "source-index paths do not match Candidate Board: " + "; ".join(details)
-        )
+    indexed_paths: set[str] = set()
 
     for item in source_index["sources"]:
         if not isinstance(item, dict):
@@ -114,6 +112,7 @@ def _verify_sources(
         if relative in seen:
             raise EvidenceReplayError(f"duplicate source path: {relative}")
         seen.add(relative)
+        indexed_paths.add(relative)
         if not isinstance(expected_hash, str):
             raise EvidenceReplayError(f"{relative}: sha256 must be a string")
         if not isinstance(expected_bytes, int):
@@ -139,6 +138,18 @@ def _verify_sources(
             }
         )
 
+    if indexed_paths != expected_sources:
+        missing = sorted(expected_sources - indexed_paths)
+        unexpected = sorted(indexed_paths - expected_sources)
+        details: list[str] = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if unexpected:
+            details.append("unexpected=" + ",".join(unexpected))
+        raise EvidenceReplayError(
+            "source-index paths do not match Candidate Board: " + "; ".join(details)
+        )
+
     return verified
 
 
@@ -160,7 +171,8 @@ def replay_evidence_bundle(
     except EvidenceBundleError as exc:
         raise EvidenceReplayError(f"bundle verification failed: {exc}") from exc
 
-    expected_sources, board_selected_id = _expected_sources_from_board(bundle_dir)
+    expected_sources, selected_candidate = _expected_sources_from_board(bundle_dir)
+    board_selected_id = selected_candidate.id
 
     manifest_selected_id = bundle_result.get("selected_candidate_id")
     if manifest_selected_id != board_selected_id:
@@ -187,6 +199,10 @@ def replay_evidence_bundle(
         raise EvidenceReplayError(
             "selected-recipe.json does not match selected Candidate Board ID"
         )
+    if recipe != selected_candidate.recipe:
+        raise EvidenceReplayError(
+            "selected-recipe.json does not match selected Candidate Board recipe"
+        )
 
     decision_path = bundle_dir / "decision.json"
     decision = json.loads(decision_path.read_text(encoding="utf-8"))
@@ -198,6 +214,31 @@ def replay_evidence_bundle(
         )
     if decision.get("status") != "selected":
         raise EvidenceReplayError("decision.json status must be selected")
+    if decision.get("reason") != selected_candidate.decision.reason:
+        raise EvidenceReplayError(
+            "decision.json reason does not match selected Candidate Board decision"
+        )
+    if decision.get("parent_recipe_id") != selected_candidate.parent_recipe_id:
+        raise EvidenceReplayError(
+            "decision.json parent does not match selected Candidate Board"
+        )
+    if decision.get("revision") != selected_candidate.revision:
+        raise EvidenceReplayError(
+            "decision.json revision does not match selected Candidate Board"
+        )
+
+    expected_lineage = [
+        {
+            "from_recipe_id": event.from_recipe_id,
+            "action": event.action,
+            "revision": event.revision,
+        }
+        for event in selected_candidate.lineage
+    ]
+    if decision.get("lineage") != expected_lineage:
+        raise EvidenceReplayError(
+            "decision.json lineage does not match selected Candidate Board"
+        )
 
     requested_output: Path | None = None
     if output_path is not None:
