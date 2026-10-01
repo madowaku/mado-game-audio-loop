@@ -4,22 +4,24 @@ MADO Game Audio Loop (MGAL) turns game SFX work from “find something and drop 
 
 **scan → audition → layer → mix → compare → save recipe → render → reuse**
 
-## Current milestone: M0.3 Layer Mixer
+## Current milestone: M0.4 Candidate Board
 
-MGAL now has a dependency-free local browser mixer for rapidly building layered game sound effects.
+MGAL now supports a complete local A/B/C comparison loop.
 
 It can:
 
-- scan a local WAV folder
-- search, inspect waveforms, and audition individual sounds
-- select up to four layers
-- preview the selected layers simultaneously
-- change gain while the mix is playing
-- mute or solo layers while the mix is playing
-- shift each layer with a millisecond offset
-- export gain and offset into a reproducible recipe
-- render a downloaded browser recipe against an explicit audio root
+- fork the current mix into Candidate A / B / C
+- edit each candidate independently
+- preview A/B/C directly from the board
+- copy the active candidate into another candidate
+- track lineage with revision-qualified parent refs such as `candidate-a@r1`
+- show structural changes versus the immutable base recipe
+- mark candidates as favorite, reject, or selected
+- store a free-text decision reason
+- export the full Candidate Board as JSON
+- validate exported boards with `mgal validate-board`
 
+The audio Recipe still stores the reproducible sound. The Candidate Board stores the reproducible decision.
 ## Quick start
 
 \`\`\`bash
@@ -69,7 +71,7 @@ mgal validate recipe.json
 mgal serve ./audio --no-browser
 \`\`\`
 
-## M0.3 control contract
+## M0.4 persistence contract
 
 **Persisted in Recipe**
 
@@ -82,11 +84,22 @@ mgal serve ./audio --no-browser
 - mute
 - solo
 
-Mute and solo intentionally do not alter the saved recipe. They are temporary listening tools for answering questions such as “what is the metal layer contributing?” or “does this whoosh work on its own?”
+Mute and solo intentionally do not alter the saved recipe.
+
+**Persisted in Candidate Board**
+
+- base recipe
+- A/B/C recipes
+- candidate revision
+- parent revision reference
+- lineage events
+- favorite / reject / selected decision
+- decision reason
+- active and selected candidate IDs
 
 ## Current constraints
 
-M0.3 stays intentionally compact:
+M0.4 stays intentionally compact:
 
 - WAV library only
 - local machine only
