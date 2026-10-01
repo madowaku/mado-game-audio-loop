@@ -7,6 +7,7 @@ import wave
 import pytest
 
 from mgal.evidence import build_evidence_bundle
+from mgal.recovery import write_relink_map
 from mgal.replay import EvidenceReplayError, replay_evidence_bundle
 
 
@@ -148,3 +149,48 @@ def test_replay_detects_semantic_decision_drift_after_rehash(tmp_path: Path):
 
     with pytest.raises(EvidenceReplayError, match="reason does not match"):
         replay_evidence_bundle(bundle, audio_root)
+
+
+def test_replay_succeeds_after_source_move_with_relink_map(tmp_path: Path):
+    bundle, audio_root = _bundle(tmp_path)
+
+    moved_root = tmp_path / "moved"
+    _write_wav(moved_root / "archive" / "metal_old.wav", 400)
+    _write_wav(moved_root / "combat" / "impact_v2.wav", 900)
+
+    relink_map = write_relink_map(
+        bundle,
+        moved_root,
+        tmp_path / "relink-map.json",
+    )
+
+    result = replay_evidence_bundle(
+        bundle,
+        moved_root,
+        relink_map_path=relink_map,
+    )
+
+    assert result["ok"] is True
+    assert result["byte_identical"] is True
+    assert result["sources_verified"] == 2
+    assert result["relink_map_used"] == str(relink_map.resolve())
+
+
+def test_replay_rejects_incomplete_relink_map(tmp_path: Path):
+    bundle, audio_root = _bundle(tmp_path)
+
+    moved_root = tmp_path / "moved"
+    _write_wav(moved_root / "only-metal.wav", 400)
+
+    relink_map = write_relink_map(
+        bundle,
+        moved_root,
+        tmp_path / "relink-map.json",
+    )
+
+    with pytest.raises(EvidenceReplayError, match="incomplete"):
+        replay_evidence_bundle(
+            bundle,
+            moved_root,
+            relink_map_path=relink_map,
+        )
