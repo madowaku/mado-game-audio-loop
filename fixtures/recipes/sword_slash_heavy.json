@@ -1,0 +1,21 @@
+{
+  "recipe_version": "0.1",
+  "id": "sword-slash-heavy-001",
+  "intent": "heavy stylized metallic sword slash",
+  "layers": [
+    {
+      "source": "../audio/cloth.wav",
+      "gain": 0.55,
+      "offset_ms": 0
+    },
+    {
+      "source": "../audio/metal.wav",
+      "gain": 0.75,
+      "offset_ms": 18
+    }
+  ],
+  "processing": {
+    "normalize": true,
+    "fade_out_ms": 40
+  }
+}
