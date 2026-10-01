@@ -45,3 +45,34 @@ def test_render_two_layers(tmp_path: Path):
     with wave.open(str(output), "rb") as wav:
         assert wav.getnframes() == 80
         assert wav.getframerate() == 8000
+
+
+def test_render_can_resolve_sources_from_audio_root(tmp_path: Path):
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    source = audio_root / "slash.wav"
+    _write_tone(source, [900] * 40)
+
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    recipe_path = downloads / "recipe.json"
+    recipe_path.write_text(
+        json.dumps({
+            "recipe_version": "0.1",
+            "id": "downloaded",
+            "intent": "downloaded browser recipe",
+            "layers": [{"source": "slash.wav", "gain": 0.5, "offset_ms": 0}],
+            "processing": {"normalize": False, "fade_out_ms": 0}
+        }),
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "out.wav"
+    render_recipe(
+        load_recipe(recipe_path),
+        recipe_path,
+        output,
+        source_root=audio_root,
+    )
+
+    assert output.exists()
