@@ -10,6 +10,7 @@ from typing import Any
 from .candidate import CandidateSnapshot, load_candidate_board
 from .evidence import EvidenceBundleError, verify_evidence_bundle
 from .recipe import load_recipe
+from .recovery import SourceRecoveryError, load_relink_map
 from .render import render_recipe
 
 
@@ -94,6 +95,7 @@ def _verify_sources(
     source_index: dict[str, Any],
     audio_root: Path,
     expected_sources: set[str],
+    source_overrides: dict[str, Path] | None = None,
 ) -> list[dict[str, Any]]:
     verified: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -118,7 +120,10 @@ def _verify_sources(
         if not isinstance(expected_bytes, int):
             raise EvidenceReplayError(f"{relative}: bytes must be an integer")
 
-        source = _resolve_source(audio_root, relative)
+        if source_overrides is not None and relative in source_overrides:
+            source = source_overrides[relative].resolve()
+        else:
+            source = _resolve_source(audio_root, relative)
         actual_bytes = source.stat().st_size
         if actual_bytes != expected_bytes:
             raise EvidenceReplayError(
@@ -157,6 +162,7 @@ def replay_evidence_bundle(
     bundle_dir: str | Path,
     audio_root: str | Path,
     output_path: str | Path | None = None,
+    relink_map_path: str | Path | None = None,
 ) -> dict[str, Any]:
     bundle_dir = Path(bundle_dir).resolve()
     audio_root = Path(audio_root).resolve()
@@ -180,11 +186,31 @@ def replay_evidence_bundle(
             "manifest selected candidate does not match Candidate Board"
         )
 
+    source_overrides: dict[str, Path] | None = None
+    if relink_map_path is not None:
+        try:
+            source_overrides = load_relink_map(relink_map_path, audio_root)
+        except SourceRecoveryError as exc:
+            raise EvidenceReplayError(f"relink map validation failed: {exc}") from exc
+        if set(source_overrides) != expected_sources:
+            missing = sorted(expected_sources - set(source_overrides))
+            unexpected = sorted(set(source_overrides) - expected_sources)
+            details: list[str] = []
+            if missing:
+                details.append("missing=" + ",".join(missing))
+            if unexpected:
+                details.append("unexpected=" + ",".join(unexpected))
+            raise EvidenceReplayError(
+                "relink map source set does not match Candidate Board: "
+                + "; ".join(details)
+            )
+
     source_index = _load_source_index(bundle_dir)
     verified_sources = _verify_sources(
         source_index,
         audio_root,
         expected_sources,
+        source_overrides=source_overrides,
     )
 
     selected_recipe_path = bundle_dir / "selected-recipe.json"
@@ -259,6 +285,7 @@ def replay_evidence_bundle(
             selected_recipe_path,
             replayed_output,
             source_root=audio_root,
+            source_overrides=source_overrides,
         )
 
         stored_hash = _sha256(stored_output)
@@ -291,4 +318,5 @@ def replay_evidence_bundle(
         "output_bytes": stored_bytes,
         "byte_identical": True,
         "replay_output": str(requested_output) if requested_output is not None else None,
+        "relink_map_used": str(Path(relink_map_path).resolve()) if relink_map_path is not None else None,
     }
