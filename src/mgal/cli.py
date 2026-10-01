@@ -8,6 +8,7 @@ from .audio import scan_audio
 from .candidate import load_candidate_board
 from .evidence import build_evidence_bundle, verify_evidence_bundle
 from .recipe import load_recipe
+from .recovery import recover_sources, write_relink_map
 from .render import render_recipe
 from .replay import replay_evidence_bundle
 from .server import serve
@@ -53,6 +54,26 @@ def build_parser() -> argparse.ArgumentParser:
     replay_bundle.add_argument(
         "--output",
         help="Optional replayed WAV path outside the Evidence Bundle",
+    )
+    replay_bundle.add_argument(
+        "--relink-map",
+        help="Optional relink-map JSON for moved or renamed source WAV files",
+    )
+
+    recover = sub.add_parser(
+        "recover-sources",
+        help="Find moved or renamed source WAV files by SHA-256",
+    )
+    recover.add_argument("bundle_dir")
+    recover.add_argument(
+        "--search-root",
+        required=True,
+        help="Folder to scan recursively for WAV source matches",
+    )
+    recover.add_argument(
+        "--output",
+        "-o",
+        help="Write relink-map JSON to this path",
     )
 
     scan = sub.add_parser("scan", help="Scan a folder for supported audio files")
@@ -118,10 +139,31 @@ def main(argv: list[str] | None = None) -> int:
                     args.bundle_dir,
                     args.audio_root,
                     output_path=args.output,
+                    relink_map_path=args.relink_map,
                 ),
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "recover-sources":
+        if args.output:
+            output = write_relink_map(
+                args.bundle_dir,
+                args.search_root,
+                args.output,
+            )
+            payload = json.loads(Path(output).read_text(encoding="utf-8"))
+            payload["relink_map_path"] = str(Path(output).resolve())
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(
+                json.dumps(
+                    recover_sources(args.bundle_dir, args.search_root),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         return 0
 
     if args.command == "scan":
