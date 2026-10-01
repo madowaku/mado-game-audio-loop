@@ -51,6 +51,7 @@ Create a local workbench that can:
 
 - scan local audio
 - validate a recipe
+- rapidly audition candidate sounds
 - combine 2–4 layers
 - control gain and offset
 - render deterministic WAV output
@@ -77,12 +78,12 @@ A recipe is the source of truth.
   "duration_target_ms": 450,
   "layers": [
     {
-      "source": "fixtures/audio/cloth.wav",
+      "source": "cloth.wav",
       "gain": 0.35,
       "offset_ms": 0
     },
     {
-      "source": "fixtures/audio/metal.wav",
+      "source": "metal.wav",
       "gain": 0.30,
       "offset_ms": 25
     }
@@ -118,13 +119,76 @@ Acceptance:
 
 ### MGAL-M0.2 Browser Audition Board
 
-Add a browser UI for rapid source audition:
+Goal:
 
-- filename
+**Replace “open files one by one” with a fast local visual audition surface.**
+
+Run:
+
+```bash
+mgal serve ./audio
+```
+
+Architecture:
+
+```text
+audio root
+   │
+   ├── WAV metadata scanner
+   │
+   ├── safe local audio endpoint
+   │
+   └── dependency-free browser UI
+            │
+            ├── search
+            ├── waveform
+            ├── play / stop
+            ├── shortlist
+            └── recipe draft
+```
+
+Browser features:
+
+- filename and relative path
 - duration
-- simple waveform
+- sample rate and channel count
+- lazy-loaded waveform
 - play / stop
-- add-to-recipe
+- stop-all
+- filename/path filtering
+- add/remove candidate layer
+- maximum four candidate layers
+- intent field
+- download recipe JSON
+
+Security boundary:
+
+- server binds to `127.0.0.1` by default
+- audio requests are resolved beneath the configured audio root
+- path traversal outside the audio root is rejected
+- UI has no external CDN/runtime dependency
+
+M0.2 acceptance:
+
+- `mgal serve <folder>` launches the board
+- `GET /api/audio` returns indexed WAVs
+- a WAV can be played in the browser
+- visible WAVs receive waveform previews
+- search filters the candidate board
+- up to four sources can be added to a recipe draft
+- recipe JSON can be downloaded
+- server path traversal has a contract test
+
+Not included in M0.2:
+
+- simultaneous layer playback
+- gain controls
+- offset controls
+- mute / solo
+- waveform trimming
+- server-side recipe persistence
+
+Those belong to M0.3.
 
 ### MGAL-M0.3 Layer Mixer
 
@@ -135,6 +199,7 @@ Add:
 - mute / solo
 - 2–4 simultaneous layers
 - live preview
+- browser-side recipe mutation
 
 ### MGAL-M0.4 Candidate Board
 
