@@ -26,6 +26,8 @@ def test_candidate_board_static_contract():
         "candidateDeltaCount",
         "parent_recipe_id",
         "revision",
+        "lineage",
+        "from_recipe_id",
         "favorite",
         "reject",
         "selected",
