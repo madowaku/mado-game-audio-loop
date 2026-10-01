@@ -248,17 +248,106 @@ Validation covers recipe structure, unique candidate IDs, selected-candidate con
 
 ### MGAL-M0.5 Evidence Bundle
 
-Persist:
+Goal:
+
+**Freeze a completed Candidate Board decision into an auditable local evidence package.**
+
+Command:
+
+\`\`\`bash
+mgal bundle candidate-board.json \\
+  --audio-root ./audio \\
+  --output ./evidence/session-001
+\`\`\`
+
+Output:
 
 \`\`\`text
-evidence/<session>/
-  intent.json
-  source-index.json
-  candidates/
-  recipe.json
-  output.wav
-  decision.json
+evidence/session-001/
+├── intent.json
+├── source-index.json
+├── candidate-board.json
+├── candidates/
+│   ├── 01-a-....json
+│   ├── 02-b-....json
+│   └── 03-c-....json
+├── selected-recipe.json
+├── decision.json
+├── output.wav
+└── manifest.json
 \`\`\`
+
+Bundle creation requires one selected candidate.
+
+#### Source evidence
+
+MGAL indexes only source WAV files referenced by the Base Recipe or candidates.
+
+Each source entry records:
+
+- relative path
+- SHA-256
+- byte size
+- duration
+- sample rate
+- channels
+- sample width
+- frame count
+
+Sources must resolve beneath the supplied audio root. Absolute source paths and traversal outside the root are rejected.
+
+#### Decision evidence
+
+\`decision.json\` records:
+
+- selected candidate ID
+- label
+- selected status
+- human decision reason
+- parent revision reference
+- candidate revision
+- lineage events
+
+#### Render evidence
+
+\`output.wav\` is rendered from the selected candidate Recipe during bundle creation.
+
+This ties the human decision, Recipe, source fingerprints, and final audible artifact together.
+
+#### Manifest
+
+\`manifest.json\` contains the path, byte count, and SHA-256 of every bundle payload file except itself.
+
+Verification:
+
+\`\`\`bash
+mgal verify-bundle ./evidence/session-001
+\`\`\`
+
+Verification checks:
+
+- supported bundle version
+- manifest file count
+- duplicate manifest paths
+- relative-path containment
+- file existence
+- byte size
+- SHA-256 content hash
+
+#### M0.5 acceptance
+
+- Candidate Board with one selected candidate can be bundled
+- Candidate Board without a selected candidate is rejected
+- referenced source WAVs are fingerprinted
+- candidate Recipes are exported separately
+- selected Recipe is exported
+- selected decision and lineage are exported
+- selected Recipe renders to output.wav
+- manifest covers all bundle payload files
+- verify-bundle succeeds on untouched evidence
+- verify-bundle detects payload tampering
+- output paths cannot escape intended roots
+- Python tests and browser JavaScript checks remain green
 
 ## Later provider architecture
 
