@@ -2,93 +2,112 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work from “find something and drop it in” into a reproducible loop:
 
-**scan → audition → layer → compare → save recipe → render → reuse**
+**scan → audition → layer → mix → compare → save recipe → render → reuse**
 
-## Current milestone: M0.2 Browser Audition Board
+## Current milestone: M0.3 Layer Mixer
 
-MGAL now includes a small local browser workbench for rapidly auditioning WAV files.
+MGAL now has a dependency-free local browser mixer for rapidly building layered game sound effects.
 
 It can:
 
-- scan a local audio folder
-- show filename, duration, sample rate, and channel count
-- draw lazy-loaded waveforms in the browser
-- play and stop sounds without opening files one by one
-- filter the library by filename/path
-- select up to four candidate layers
-- download a valid MGAL recipe draft
-
-M0.2 intentionally stops before live mixing. Gain, offset, mute/solo, and simultaneous preview belong to M0.3.
+- scan a local WAV folder
+- search, inspect waveforms, and audition individual sounds
+- select up to four layers
+- preview the selected layers simultaneously
+- change gain while the mix is playing
+- mute or solo layers while the mix is playing
+- shift each layer with a millisecond offset
+- export gain and offset into a reproducible recipe
+- render a downloaded browser recipe against an explicit audio root
 
 ## Quick start
 
-```bash
+\`\`\`bash
 python -m pip install -e ".[dev]"
 pytest
-```
-
-Point MGAL at any folder containing WAV files:
-
-```bash
 mgal serve ./audio
-```
+\`\`\`
 
-The board opens at:
+The mixer opens at:
 
-```text
+\`\`\`text
 http://127.0.0.1:8765
-```
+\`\`\`
 
-Useful CLI commands:
+### Browser workflow
 
-```bash
-mgal --help
-mgal scan ./audio
-mgal validate recipe.json
-mgal render recipe.json --output output.wav
-mgal serve ./audio --no-browser
-```
-
-## Browser Audition Board flow
-
-```text
+\`\`\`text
 local WAV folder
       ↓
-browser catalog
+search + waveform + audition
       ↓
-waveform + one-click audition
+add 2–4 layers
       ↓
-search / shortlist
+Preview mix
       ↓
-select up to 4 layers
+gain / offset / mute / solo
       ↓
 download recipe JSON
       ↓
-M0.3 Layer Mixer
-```
+deterministic WAV render
+\`\`\`
 
-## Project layout
+If the recipe was downloaded to another folder, point the renderer back at the source library:
 
-```text
-docs/           product and implementation specs
-src/mgal/       Python package
-src/mgal/web/   dependency-free browser UI
-fixtures/       deterministic test data and recipes
-tests/          contract tests
-```
+\`\`\`bash
+mgal render ~/Downloads/heavy-sword-slash.json \
+  --audio-root ./audio \
+  --output ./output/heavy-sword-slash.wav
+\`\`\`
+
+Other useful commands:
+
+\`\`\`bash
+mgal --help
+mgal scan ./audio
+mgal validate recipe.json
+mgal serve ./audio --no-browser
+\`\`\`
+
+## M0.3 control contract
+
+**Persisted in Recipe**
+
+- source path
+- gain
+- offset_ms
+
+**Audition-only**
+
+- mute
+- solo
+
+Mute and solo intentionally do not alter the saved recipe. They are temporary listening tools for answering questions such as “what is the metal layer contributing?” or “does this whoosh work on its own?”
 
 ## Current constraints
 
-M0.2 is deliberately small:
+M0.3 stays intentionally compact:
 
 - WAV library only
 - local machine only
-- browser UI has no cloud dependency
-- recipe draft uses relative source paths
-- mixing controls are not yet exposed in the browser
+- maximum four mixer layers
+- browser UI has no cloud/CDN dependency
+- offset range in the browser is 0–5000 ms
+- no trimming, EQ, pitch, reverb, or waveform editing yet
+- renderer currently expects 16-bit mono WAV layers at a shared sample rate
+
+## Project layout
+
+\`\`\`text
+docs/           product and implementation specs
+src/mgal/       Python package
+src/mgal/web/   dependency-free browser mixer
+fixtures/       deterministic test data and recipes
+tests/          contract tests
+\`\`\`
 
 ## Design principle
 
 > Shorten the distance between “I imagine this sound” and “I can hear it in the game”.
 
-AI generation is treated as a future source provider, not as the core architecture.
+AI generation remains a future source provider, not the core architecture.
