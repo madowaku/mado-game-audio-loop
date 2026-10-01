@@ -416,6 +416,111 @@ M0.6 verifies integrity and reproducibility. It does not provide cryptographic s
 - optional replay output is written only outside the Evidence Bundle
 - Python tests and browser JavaScript checks remain green
 
+### MGAL-M0.7 Source Recovery / Relink
+
+Goal:
+
+**Recover reproducible Evidence Replay after source WAV files have been moved or renamed, without modifying historical evidence.**
+
+Recovery command:
+
+```bash
+mgal recover-sources ./evidence/session-001 \
+  --search-root ./audio-reorganized \
+  --output ./relinks/session-001.json
+```
+
+Replay with recovered sources:
+
+```bash
+mgal replay-bundle ./evidence/session-001 \
+  --audio-root ./audio-reorganized \
+  --relink-map ./relinks/session-001.json
+```
+
+Core rule:
+
+```text
+Evidence paths remain immutable.
+Current filesystem paths live only in relink-map.json.
+```
+
+Recovery algorithm:
+
+```text
+source-index entry
+      ↓
+try original relative path
+      ↓
+if invalid:
+filter current WAVs by byte size
+      ↓
+SHA-256 compatible candidates
+      ↓
+0 matches  → missing
+1 match    → relinked
+2+ matches → ambiguous
+```
+
+A direct match keeps status `direct`.
+
+A unique moved/renamed hash match gets status `relinked`.
+
+Multiple identical matches are not guessed. They produce an incomplete map with `status=ambiguous` and a list of candidate paths.
+
+The map records:
+
+- relink map version
+- Evidence Bundle manifest SHA-256
+- logical source count
+- resolved / ambiguous / missing counts
+- complete flag
+- per-source logical source path
+- resolution status
+- current target path
+- expected SHA-256
+- expected byte size
+- all hash matches
+
+Relink-map safety:
+
+- map file must be stored outside the Evidence Bundle
+- target paths must be relative to the supplied search root
+- targets are revalidated by byte count and SHA-256 at replay time
+- incomplete maps cannot be used
+- map source set must equal the Candidate Board source set
+- map is bound to the Evidence Bundle via manifest SHA-256
+- a map for another bundle is rejected
+
+Renderer integration:
+
+```text
+Recipe logical source
+      ↓
+source_overrides
+      ↓
+validated current physical source
+```
+
+The renderer receives source overrides in memory. Recipe JSON and Candidate Board JSON are not mutated.
+
+Replay result remains valid only if the freshly rendered WAV matches stored `output.wav` byte-for-byte.
+
+#### M0.7 acceptance
+
+- moved and renamed sources can be found by stored SHA-256
+- original paths are preferred when still valid
+- unique hash matches auto-relink
+- duplicate hash matches are marked ambiguous
+- missing hashes are marked missing
+- incomplete maps are rejected by replay
+- relink targets are re-hashed before use
+- relink maps are bound to the originating Evidence Bundle
+- relink maps cannot be written inside Evidence Bundles
+- replay through a complete relink map reproduces stored output byte-identically
+- historical Recipe and Evidence files remain unchanged
+- Python tests and browser JavaScript checks remain green
+
 ## Later provider architecture
 
 \`\`\`text
