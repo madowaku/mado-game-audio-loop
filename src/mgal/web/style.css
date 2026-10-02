@@ -750,6 +750,70 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
 
 .decision-context-stale[hidden] { display: none; }
 
+.delta-inspector-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.delta-inspector-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #3d4135;
+  border-radius: 10px;
+  background: #171a16;
+}
+
+.delta-inspector-panel[hidden] { display: none; }
+
+.delta-inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.delta-inspector-head h3 {
+  margin: 2px 0 0;
+  font-size: .86rem;
+}
+
+.delta-inspector-list {
+  display: grid;
+  gap: 7px;
+}
+
+.delta-inspector-card {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #30362c;
+  border-radius: 9px;
+  background: #1a1d18;
+}
+
+.delta-inspector-reference {
+  display: grid;
+  gap: 2px;
+  padding: 6px 7px;
+  border: 1px solid #292e26;
+  border-radius: 7px;
+}
+
+.delta-inspector-reference > span:first-child {
+  color: #c6cdbd;
+  font-size: .71rem;
+  font-weight: 700;
+}
+
+.delta-inspector-reference > span:last-child {
+  color: #888f82;
+  font-size: .68rem;
+  line-height: 1.45;
+}
+
 .candidate-board { display: grid; gap: 10px; margin: 12px 0; }
 
 .candidate-card {
