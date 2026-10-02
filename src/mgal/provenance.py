@@ -525,3 +525,60 @@ def verify_provenance_subset(
         "incomplete_entries": incomplete,
         "complete": computed_complete,
     }
+
+
+def merge_provenance_ledgers(
+    ledger_paths: list[str | Path],
+    output_path: str | Path,
+) -> Path:
+    if not ledger_paths:
+        raise ProvenanceLedgerError("at least one provenance ledger is required")
+
+    merged: dict[str, dict[str, Any]] = {}
+
+    for ledger_path in ledger_paths:
+        ledger = load_provenance_ledger(ledger_path)
+        for entry in ledger["entries"]:
+            source_id = entry["source_id"]
+            existing = merged.get(source_id)
+            if existing is None:
+                merged[source_id] = entry
+                continue
+            if existing == entry:
+                continue
+
+            existing_complete = entry_is_complete(existing)
+            incoming_complete = entry_is_complete(entry)
+
+            if existing_complete and not incoming_complete:
+                continue
+            if incoming_complete and not existing_complete:
+                merged[source_id] = entry
+                continue
+
+            raise ProvenanceLedgerError(
+                "conflicting provenance entries for source_id: "
+                + source_id
+            )
+
+    entries = sorted(
+        merged.values(),
+        key=lambda entry: (
+            str(entry.get("path_hint", "")),
+            str(entry.get("source_id", "")),
+        ),
+    )
+    payload = {
+        "provenance_ledger_version": "0.1",
+        "entry_count": len(entries),
+        "entries": entries,
+    }
+
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    load_provenance_ledger(output)
+    return output
