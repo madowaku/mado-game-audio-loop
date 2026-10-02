@@ -676,6 +676,121 @@ Path moves do not change provenance identity. M0.7 relink maps alter only curren
 - relink/replay continues to work because identity is content-based
 - Python tests and browser JavaScript checks remain green
 
+### MGAL-M0.9 Release / Attribution Pack
+
+Goal:
+
+**Turn a verified Evidence Bundle into a compact shipping artifact containing the final WAV and release-facing attribution/provenance metadata.**
+
+Command:
+
+```bash
+mgal release-pack ./evidence/session-001 \
+  --output ./release/heavy-slash
+```
+
+Optional release name:
+
+```bash
+mgal release-pack ./evidence/session-001 \
+  --name "Heavy Slash Final" \
+  --output ./release/heavy-slash
+```
+
+Output:
+
+```text
+release/heavy-slash/
+├── heavy-slash-final.wav
+├── ATTRIBUTION.txt
+├── LICENSE_SUMMARY.json
+├── PROVENANCE_REPORT.json
+├── RECIPE.json
+├── EVIDENCE_REF.json
+└── RELEASE_MANIFEST.json
+```
+
+Release source scope:
+
+```text
+Candidate Board sources != Release sources
+
+Release sources =
+only source fingerprints referenced by selected Recipe
+```
+
+This prevents rejected/base-only experimental sources from leaking into release attribution.
+
+Release requirements:
+
+- Evidence Bundle must pass `verify-bundle`
+- Evidence Bundle must include provenance-ledger.json
+- every source used by selected Recipe must have complete provenance
+- release output must be outside the Evidence Bundle
+
+ATTRIBUTION.txt is a human-readable release credit/provenance document.
+
+LICENSE_SUMMARY.json stores recorded source/license declarations.
+
+PROVENANCE_REPORT.json contains only final selected source identities and metadata.
+
+RECIPE.json is the final selected Recipe.
+
+EVIDENCE_REF.json records:
+
+- Evidence manifest SHA-256
+- selected candidate ID
+- selected Recipe ID
+- Evidence output WAV SHA-256
+
+RELEASE_MANIFEST.json records:
+
+- release pack version
+- release name
+- selected candidate ID
+- selected Recipe ID
+- Evidence manifest SHA-256
+- final source count
+- every payload path / byte size / SHA-256
+
+Verification:
+
+```bash
+mgal verify-release ./release/heavy-slash
+```
+
+Verification checks both byte integrity and semantic consistency:
+
+- payload set equals Release Manifest
+- all payload byte sizes and SHA-256 values match
+- exactly one final WAV exists
+- Recipe ID matches manifest
+- License Summary and Provenance Report source sets match
+- source counts match
+- selected candidate and Recipe IDs agree across reports
+- Evidence reference manifest hash matches Release Manifest
+- final WAV hash equals Evidence output hash
+
+The Release Pack is evidence-bound but does not mutate historical Evidence.
+
+M0.9 does not make legal determinations. It packages the provenance/license declarations already recorded by M0.8.
+
+#### M0.9 acceptance
+
+- verified Evidence can produce a Release Pack
+- Release Pack includes one final WAV
+- only selected Recipe source identities appear in release provenance/attribution
+- rejected/base-only source identities are excluded
+- incomplete selected-source provenance blocks release packaging
+- missing provenance blocks release packaging
+- output inside Evidence Bundle is rejected
+- Evidence manifest SHA-256 is recorded
+- final WAV is bound to Evidence output SHA-256
+- Release Manifest hashes all payload files
+- verify-release detects payload tampering
+- verify-release detects semantic drift even after a payload hash is recomputed
+- Python tests and browser JavaScript checks remain green
+
 ## Later provider architecture
 
 \`\`\`text
