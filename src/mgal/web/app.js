@@ -18,6 +18,7 @@ const state = {
   preferenceArchives: [],
   preferenceReplay: null,
   preferenceReplayPairIndex: 0,
+  decisionMemory: null,
 };
 
 const list = document.querySelector("#audio-list");
@@ -82,6 +83,11 @@ const preferenceReplayLeftPlay = document.querySelector("#preference-replay-left
 const preferenceReplayRightPlay = document.querySelector("#preference-replay-right-play");
 const preferenceReplayVote = document.querySelector("#preference-replay-vote");
 const closePreferenceReplayButton = document.querySelector("#close-preference-replay");
+const decisionMemory = document.querySelector("#decision-memory");
+const decisionMemorySummary = document.querySelector("#decision-memory-summary");
+const decisionMemoryEmpty = document.querySelector("#decision-memory-empty");
+const decisionMemoryList = document.querySelector("#decision-memory-list");
+const refreshDecisionMemoryButton = document.querySelector("#refresh-decision-memory");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -1393,6 +1399,9 @@ function renderPreferenceArchive() {
     meta.append(title, detail);
     card.appendChild(meta);
 
+    const actions = document.createElement("div");
+    actions.className = "preference-archive-actions";
+
     if (entry.ok !== false) {
       const replay = document.createElement("button");
       replay.type = "button";
@@ -1401,7 +1410,7 @@ function renderPreferenceArchive() {
       replay.addEventListener("click", function () {
         openPreferenceReplay(entry.archive_id, replay);
       });
-      card.appendChild(replay);
+      actions.appendChild(replay);
     } else if (entry.recoverable) {
       const recover = document.createElement("button");
       recover.type = "button";
@@ -1410,11 +1419,168 @@ function renderPreferenceArchive() {
       recover.addEventListener("click", function () {
         recoverPreferenceArchive(entry.archive_id, recover);
       });
-      card.appendChild(recover);
+      actions.appendChild(recover);
+    }
+
+    if (entry.promotable) {
+      const promote = document.createElement("button");
+      promote.type = "button";
+      promote.className = "secondary compact memory-promotion-action";
+      promote.textContent = entry.promoted
+        ? "In memory"
+        : "Promote memory";
+      promote.disabled = Boolean(entry.promoted);
+      if (!entry.promoted) {
+        promote.addEventListener("click", function () {
+          promotePreferenceArchive(entry.archive_id, promote);
+        });
+      }
+      actions.appendChild(promote);
+    }
+
+    if (actions.childElementCount > 0) {
+      card.appendChild(actions);
     }
 
     preferenceArchiveList.appendChild(card);
   });
+}
+
+function formatSignedNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "?";
+  if (number > 0) return "+" + String(number);
+  return String(number);
+}
+
+function renderDecisionMemory() {
+  const view = state.decisionMemory;
+  decisionMemoryList.replaceChildren();
+
+  if (!view || !view.summary) {
+    decisionMemorySummary.textContent =
+      "Decision Memory unavailable";
+    decisionMemoryEmpty.hidden = false;
+    return;
+  }
+
+  const summary = view.summary;
+  decisionMemorySummary.textContent =
+    String(summary.promotion_count) +
+    " promoted session" +
+    (summary.promotion_count === 1 ? "" : "s") +
+    " · " +
+    String(summary.entry_count) +
+    " pairwise observation" +
+    (summary.entry_count === 1 ? "" : "s");
+
+  const entries = Array.isArray(view.entries)
+    ? view.entries
+    : [];
+  decisionMemoryEmpty.hidden = entries.length > 0;
+
+  entries.slice(-12).reverse().forEach(function (entry) {
+    const row = document.createElement("article");
+    row.className = "decision-memory-row";
+
+    const title = document.createElement("strong");
+    title.textContent =
+      entry.winner_candidate_id +
+      " preferred over " +
+      entry.loser_candidate_id;
+
+    const context = document.createElement("span");
+    context.textContent =
+      entry.archive_id +
+      " · pair " +
+      String(entry.pair_index + 1) +
+      (entry.intent ? " · " + entry.intent : "");
+
+    const differences = entry.observed_differences || {};
+    const delta = document.createElement("span");
+    delta.className = "decision-memory-delta";
+    delta.textContent =
+      "observed Δ layers " +
+      formatSignedNumber(differences.layer_count_delta) +
+      " · gain " +
+      formatSignedNumber(differences.total_gain_delta) +
+      " · earliest offset " +
+      formatSignedNumber(differences.earliest_offset_ms_delta) +
+      "ms · fade " +
+      formatSignedNumber(differences.fade_out_ms_delta) +
+      "ms";
+
+    row.append(title, context, delta);
+    decisionMemoryList.appendChild(row);
+  });
+}
+
+async function refreshDecisionMemory(options) {
+  const quiet = Boolean(options && options.quiet);
+  if (!quiet) {
+    refreshDecisionMemoryButton.disabled = true;
+    refreshDecisionMemoryButton.textContent = "Refreshing…";
+  }
+
+  try {
+    const response = await fetch("/api/decision-memory", {
+      cache: "no-store",
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not load Decision Memory"
+      );
+    }
+    state.decisionMemory = result;
+    renderDecisionMemory();
+  } catch (error) {
+    if (!quiet) {
+      status.textContent =
+        "Decision Memory refresh failed: " + error.message;
+    }
+  } finally {
+    if (!quiet) {
+      refreshDecisionMemoryButton.disabled = false;
+      refreshDecisionMemoryButton.textContent = "↻ Refresh";
+    }
+  }
+}
+
+async function promotePreferenceArchive(archiveId, button) {
+  button.disabled = true;
+  button.textContent = "Promoting…";
+
+  try {
+    const response = await fetch(
+      "/api/preferences/" +
+      encodeURIComponent(archiveId) +
+      "/promote",
+      {
+        method: "POST",
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not promote Preference Archive"
+      );
+    }
+
+    await refreshDecisionMemory({ quiet: true });
+    await refreshPreferenceArchive({ quiet: true });
+    status.textContent =
+      "Decision Memory promoted · " +
+      String(result.memory.entry_count) +
+      " observations" +
+      (result.reused ? " · already present" : "");
+  } catch (error) {
+    status.textContent =
+      "Decision Memory promotion failed: " + error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Promote memory";
+  }
 }
 
 async function recoverPreferenceArchive(archiveId, button) {
@@ -1954,6 +2120,9 @@ preferenceClose.addEventListener("click", closePreferenceSession);
 refreshPreferenceArchiveButton.addEventListener("click", function () {
   refreshPreferenceArchive({ quiet: false });
 });
+refreshDecisionMemoryButton.addEventListener("click", function () {
+  refreshDecisionMemory({ quiet: false });
+});
 preferenceReplayPrev.addEventListener("click", function () {
   if (!state.preferenceReplay) return;
   state.preferenceReplayPairIndex = Math.max(
@@ -2182,6 +2351,7 @@ refreshSourcesButton.addEventListener("click", function () {
 async function boot() {
   await refreshCatalog({ quiet: false });
   await refreshPreferenceArchive({ quiet: true });
+  await refreshDecisionMemory({ quiet: true });
   updateAuditionControls();
   renderRecipe();
   renderCandidates();
