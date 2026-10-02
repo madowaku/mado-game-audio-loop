@@ -402,7 +402,7 @@ class StabilityAudioProvider:
 
             output_path = (
                 self.output_root
-                / f"{request_slug}-{ordinal:02d}-{generation.generation_id[:12]}.wav"
+                / f"{request_slug}-{ordinal:02d}-{generation.generation_id[-12:]}.wav"
             )
             output_path.write_bytes(generation.audio_bytes)
 
