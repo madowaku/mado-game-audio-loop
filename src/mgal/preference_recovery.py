@@ -588,6 +588,9 @@ def list_portable_preference_archives(
             result.append(
                 {
                     "archive_id": archive_id,
+                    "archive_evidence_sha256": manifest[
+                        "evidence_sha256"
+                    ],
                     "ok": False,
                     "recoverable": True,
                     "source_status": "unresolved",
@@ -615,6 +618,9 @@ def list_portable_preference_archives(
         result.append(
             {
                 "archive_id": archive_id,
+                "archive_evidence_sha256": manifest[
+                    "evidence_sha256"
+                ],
                 "ok": True,
                 "recoverable": False,
                 "source_status": replay[
