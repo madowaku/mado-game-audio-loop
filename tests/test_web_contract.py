@@ -76,6 +76,9 @@ def test_candidate_board_static_contract():
         "refresh-candidate-plans",
         "candidate-plan-empty",
         "candidate-plan-list",
+        "refresh-materialized-recipes",
+        "materialized-recipe-empty",
+        "materialized-recipe-list",
     ):
         assert f'id="{element_id}"' in html
 
@@ -181,6 +184,15 @@ def test_candidate_board_static_contract():
         "Plan ready",
         "manual_required",
         "recipe_materialization",
+        "materializeCandidatePlan",
+        "refreshMaterializedRecipeSets",
+        "renderMaterializedRecipeSets",
+        "formatMaterializedApplication",
+        "/api/materialized-recipe-sets",
+        "Materialize recipes",
+        "Recipes ready",
+        "candidate_board_mutation",
+        "source_generation",
     ):
         assert token in js
 
@@ -565,3 +577,33 @@ def test_candidate_plan_non_materialized_ui_contract():
     assert ".candidate-plan-card" in css
     assert ".candidate-plan-variant" in css
     assert ".manual-required" in css
+
+
+def test_materialized_recipe_set_ui_does_not_mutate_candidate_board():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "MATERIALIZED RECIPES" in html
+    assert "A / B / C Recipe Set" in html
+    assert "Candidate Board is not changed." in html
+
+    assert '"Materialize recipes"' in js
+    assert '"Recipes ready"' in js
+    assert '"Materializer unsupported"' in js
+    assert '"/api/materialized-recipe-sets"' in js
+    assert "current_recipe: recipePayload()" in js
+    assert 'result.recipe_set.authority.candidate_board_mutation !== "none"' in js
+    assert 'result.recipe_set.authority.candidate_selection !== "none"' in js
+    assert 'result.recipe_set.authority.source_generation !== "none"' in js
+
+    start = js.index("async function materializeCandidatePlan")
+    end = js.index("async function refreshCandidatePlans", start)
+    code = js[start:end]
+    assert "setCandidateDecision" not in code
+    assert "applyPreferenceWinner" not in code
+    assert "state.candidates =" not in code
+    assert "seedCandidates" not in code
+
+    assert ".materialized-recipe-shelf" in css
+    assert ".materialized-recipe-card" in css
