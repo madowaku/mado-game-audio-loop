@@ -138,6 +138,62 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 self._send_json(archives)
                 return
 
+            if parsed.path == "/api/materialized-recipe-sets":
+                self._send_json(
+                    list_materialized_recipe_sets(root)
+                )
+                return
+
+            if parsed.path == "/api/materialized-recipe-sets":
+                raw_length = self.headers.get("Content-Length")
+                try:
+                    content_length = int(raw_length or "0")
+                except ValueError:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid Content-Length",
+                    )
+                    return
+                if content_length <= 0 or content_length > 2_000_000:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "materialization payload size is invalid",
+                    )
+                    return
+                try:
+                    request_data = json.loads(
+                        self.rfile.read(content_length).decode("utf-8")
+                    )
+                except (
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                ):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must be valid JSON",
+                    )
+                    return
+                if not isinstance(request_data, dict):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must contain an object",
+                    )
+                    return
+                try:
+                    payload = materialize_saved_candidate_plan(
+                        root,
+                        request_data.get("plan_id"),
+                        request_data.get("current_recipe"),
+                    )
+                except RecipeMaterializerError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
+                return
+
             if parsed.path == "/api/candidate-plans":
                 self._send_json(
                     list_candidate_plans(root)
