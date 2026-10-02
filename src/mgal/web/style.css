@@ -384,7 +384,8 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
 }
 
 #blind-mode.active,
-#sequence-candidates.active {
+#sequence-candidates.active,
+#preference-session.active {
   color: #111210;
   border-color: #cceb67;
   background: #cceb67;
@@ -428,6 +429,102 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
 .blind-mode .intent input {
   color: transparent;
   text-shadow: none;
+}
+
+.preference-panel {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 12px;
+  padding: 12px;
+  border: 1px solid #3a4330;
+  border-radius: 12px;
+  background: #171c14;
+}
+
+.preference-panel[hidden] { display: none; }
+
+.preference-head,
+.preference-actions,
+.preference-pair,
+.preference-reveal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.preference-head h3 {
+  margin: 2px 0 0;
+  font-size: .92rem;
+}
+
+.preference-message,
+.preference-verdict {
+  margin: 0;
+  color: #9da493;
+  font-size: .75rem;
+  line-height: 1.45;
+}
+
+.preference-pair {
+  align-items: stretch;
+}
+
+.preference-side {
+  display: grid;
+  flex: 1;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #30382a;
+  border-radius: 10px;
+  background: #1d221a;
+}
+
+.preference-side > strong {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  color: #111210;
+  border-radius: 9px;
+  background: #cceb67;
+  font-size: 1.05rem;
+}
+
+.preference-versus {
+  align-self: center;
+  color: #73796d;
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.preference-reveal {
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid #30382a;
+  border-radius: 9px;
+  background: #141812;
+}
+
+.preference-reveal[hidden] { display: none; }
+
+.preference-reveal-row {
+  color: #c5cabf;
+  font-size: .75rem;
+}
+
+.preference-mode .candidate-badge {
+  color: #c9d5b2;
+  background: #2b3027;
+}
+
+.preference-mode .candidate-card .candidate-action:not(.candidate-preview) {
+  visibility: hidden;
+}
+
+.preference-mode .candidate-reason,
+.preference-mode .candidate-decisions {
+  display: none;
 }
 
 .candidate-board { display: grid; gap: 10px; margin: 12px 0; }
@@ -525,4 +622,6 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   .layer-control { grid-template-columns: 62px minmax(0, 1fr) 54px; }
   .candidate-card-head { align-items: stretch; flex-direction: column; }
   .audition-position { width: 100%; margin-left: 0; }
+  .preference-pair { flex-direction: column; }
+  .preference-versus { align-self: center; }
 }
