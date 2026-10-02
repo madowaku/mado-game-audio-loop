@@ -9,7 +9,11 @@ from urllib.parse import quote, unquote, urlparse
 import webbrowser
 
 from .audio import read_wav_metadata
-from .intake import load_intake_catalog
+from .intake import (
+    ProviderIntakeError,
+    build_intake_candidate_seed,
+    load_intake_catalog,
+)
 
 
 WEB_ROOT = Path(__file__).with_name("web")
@@ -79,6 +83,28 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 self._send_json(build_catalog(root))
                 return
 
+            if (
+                parsed.path.startswith("/api/intakes/")
+                and parsed.path.endswith("/seed-board")
+            ):
+                encoded_id = parsed.path[
+                    len("/api/intakes/") : -len("/seed-board")
+                ].strip("/")
+                intake_id = unquote(encoded_id)
+                try:
+                    payload = build_intake_candidate_seed(
+                        root,
+                        intake_id,
+                    )
+                except ProviderIntakeError as exc:
+                    self._send_json_error(
+                        HTTPStatus.NOT_FOUND,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
+                return
+
             if parsed.path.startswith("/audio/"):
                 relative = unquote(parsed.path.removeprefix("/audio/"))
                 try:
@@ -101,6 +127,28 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             self.send_error(HTTPStatus.NOT_FOUND)
+
+        def _send_json_error(
+            self,
+            status: HTTPStatus,
+            message: str,
+        ) -> None:
+            body = json.dumps(
+                {"error": message},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            self.send_response(status)
+            self.send_header(
+                "Content-Type",
+                "application/json; charset=utf-8",
+            )
+            self.send_header(
+                "Content-Length",
+                str(len(body)),
+            )
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
 
         def _send_json(self, payload: object) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
