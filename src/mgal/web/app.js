@@ -8,6 +8,7 @@ const state = {
   candidates: [],
   activeCandidateId: null,
   boardBaseRecipe: null,
+  catalogSignature: null,
 };
 
 const list = document.querySelector("#audio-list");
@@ -26,6 +27,7 @@ const candidateBoard = document.querySelector("#candidate-board");
 const candidateHelp = document.querySelector("#candidate-help");
 const downloadBoardButton = document.querySelector("#download-board");
 const mixerTitle = document.querySelector("#mixer-title");
+const refreshSourcesButton = document.querySelector("#refresh-sources");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -338,12 +340,27 @@ function renderSounds(sounds) {
     const play = node.querySelector(".play");
     const add = node.querySelector(".add");
     const canvas = node.querySelector(".waveform");
+    const sourceContext = node.querySelector(".source-context");
 
     node.querySelector(".file-name").textContent = sound.name;
     node.querySelector(".file-path").textContent = sound.relative_path;
     node.querySelector(".duration").textContent = formatDuration(sound.duration_ms);
     node.querySelector(".meta").textContent =
       String(sound.sample_rate) + " Hz · " + String(sound.channels) + "ch";
+
+    if (sound.intake) {
+      card.classList.add("intake-card");
+      sourceContext.hidden = false;
+      node.querySelector(".source-type-badge").textContent =
+        sound.intake.source_type || sound.intake.provider_kind || "provider";
+      node.querySelector(".provider-badge").textContent =
+        sound.intake.generation_provider || sound.intake.provider_id || "provider";
+      node.querySelector(".intake-badge").textContent =
+        "intake · " + (sound.intake.intake_id || "unknown");
+      node.querySelector(".source-prompt").textContent =
+        sound.intake.prompt || sound.intake.intent || "";
+    }
+
     audio.src = sound.url;
     canvas.dataset.url = sound.url;
 
@@ -375,7 +392,21 @@ function renderSounds(sounds) {
       renderCandidates();
     });
 
-    card.dataset.search = (sound.name + " " + sound.relative_path).toLowerCase();
+    const intakeSearch = sound.intake
+      ? [
+          sound.intake.intake_id,
+          sound.intake.provider_id,
+          sound.intake.provider_kind,
+          sound.intake.source_type,
+          sound.intake.generation_provider,
+          sound.intake.generation_model,
+          sound.intake.prompt,
+          sound.intake.intent,
+        ].filter(Boolean).join(" ")
+      : "";
+    card.dataset.search = (
+      sound.name + " " + sound.relative_path + " " + intakeSearch
+    ).toLowerCase();
     list.appendChild(node);
     waveformObserver.observe(list.lastElementChild.querySelector(".waveform"));
   });
@@ -803,34 +834,82 @@ downloadBoardButton.addEventListener("click", function () {
 
 seedCandidatesButton.addEventListener("click", seedCandidates);
 
-filter.addEventListener("input", function () {
+function applyFilter() {
   const query = filter.value.trim().toLowerCase();
   document.querySelectorAll(".audio-card").forEach(function (card) {
     card.hidden = Boolean(query && !card.dataset.search.includes(query));
   });
-});
+}
+
+filter.addEventListener("input", applyFilter);
 
 previewMixButton.addEventListener("click", previewMix);
 stopMixButton.addEventListener("click", stopMix);
 document.querySelector("#stop-all").addEventListener("click", stopAll);
 
-async function boot() {
+function catalogSignature(sounds) {
+  return JSON.stringify(
+    sounds.map(function (sound) {
+      return [
+        sound.relative_path,
+        sound.bytes || 0,
+        sound.intake ? sound.intake.intake_id : null,
+        sound.intake ? sound.intake.source_id : null,
+      ];
+    })
+  );
+}
+
+async function refreshCatalog(options) {
+  const quiet = Boolean(options && options.quiet);
+  if (!quiet) {
+    refreshSourcesButton.disabled = true;
+    refreshSourcesButton.textContent = "Refreshing…";
+  }
+
   try {
-    const response = await fetch("/api/audio");
+    const response = await fetch("/api/audio", { cache: "no-store" });
     if (!response.ok) throw new Error("HTTP " + String(response.status));
-    state.sounds = await response.json();
-    renderSounds(state.sounds);
-    renderRecipe();
-    renderCandidates();
+    const sounds = await response.json();
+    const signature = catalogSignature(sounds);
+
+    if (signature !== state.catalogSignature) {
+      state.sounds = sounds;
+      state.catalogSignature = signature;
+      renderSounds(state.sounds);
+      applyFilter();
+    }
+
     status.textContent =
       String(state.sounds.length) +
       " WAV file" +
-      (state.sounds.length === 1 ? "" : "s");
+      (state.sounds.length === 1 ? "" : "s") +
+      " · live intake";
   } catch (error) {
-    status.textContent = "Could not scan audio";
-    empty.hidden = false;
-    empty.textContent = error.message;
+    if (!quiet) {
+      status.textContent = "Could not scan audio";
+      empty.hidden = false;
+      empty.textContent = error.message;
+    }
+  } finally {
+    if (!quiet) {
+      refreshSourcesButton.disabled = false;
+      refreshSourcesButton.textContent = "↻ Refresh sources";
+    }
   }
+}
+
+refreshSourcesButton.addEventListener("click", function () {
+  refreshCatalog({ quiet: false });
+});
+
+async function boot() {
+  await refreshCatalog({ quiet: false });
+  renderRecipe();
+  renderCandidates();
+  window.setInterval(function () {
+    refreshCatalog({ quiet: true });
+  }, 2500);
 }
 
 boot();
