@@ -170,7 +170,7 @@ def compile_candidate_plan(
             "role": "hypothesis",
             "resolution": "resolved",
             "derivation": "human_variation_brief",
-            "change": planned_change,
+            "change": dict(planned_change),
             "hypothesis": human[
                 "hypothesis"
             ],
@@ -227,7 +227,7 @@ def compile_candidate_plan(
             "listening_for": human[
                 "listening_for"
             ],
-            "planned_change": planned_change,
+            "planned_change": dict(planned_change),
             "preserve": human[
                 "preserve"
             ],
