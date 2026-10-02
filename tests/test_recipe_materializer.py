@@ -87,8 +87,8 @@ def _brief(
     *,
     dimension: str = "gain",
     action: str = "decrease",
-    amount: float | int = 0.1,
-    unit: str = "ratio",
+    amount: float | int | None = 0.1,
+    unit: str | None = "ratio",
 ) -> dict:
     recipe = _recipe()
     payload = {
@@ -339,8 +339,8 @@ def test_materializer_rejects_unresolved_plan(
         audio_root,
         dimension="other",
         action="custom",
-        amount=0,
-        unit="ratio",
+        amount=None,
+        unit=None,
     )
     with pytest.raises(
         RecipeMaterializerError,
