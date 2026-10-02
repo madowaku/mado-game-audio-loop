@@ -7,6 +7,7 @@ import re
 import shutil
 from typing import Any
 
+from .candidate import parse_candidate_board
 from .normalizer import (
     CANONICAL_PROFILE_ID,
     normalize_provider_result_file,
@@ -415,3 +416,154 @@ def load_intake_catalog(
             }
 
     return catalog
+
+
+def _intake_manifest_path(
+    audio_root: Path,
+    intake_id: str,
+) -> Path:
+    intake_root = (audio_root / ".mgal" / "intakes").resolve()
+    candidate = (intake_root / intake_id / "manifest.json").resolve()
+    try:
+        candidate.relative_to(intake_root)
+    except ValueError as exc:
+        raise ProviderIntakeError(
+            "intake id escapes workspace intake root"
+        ) from exc
+    if not candidate.is_file():
+        raise ProviderIntakeError(
+            f"intake manifest does not exist: {intake_id}"
+        )
+    return candidate
+
+
+def build_intake_candidate_seed(
+    audio_root: str | Path,
+    intake_id: str,
+) -> dict[str, Any]:
+    audio_root = Path(audio_root).resolve()
+    manifest_path = _intake_manifest_path(
+        audio_root,
+        intake_id,
+    )
+    verify_intake_manifest(audio_root, manifest_path)
+
+    manifest = json.loads(
+        manifest_path.read_text(encoding="utf-8")
+    )
+    candidates = manifest.get("candidates")
+    request = manifest.get("request")
+
+    if not isinstance(candidates, list) or not candidates:
+        raise ProviderIntakeError(
+            "intake must contain at least one candidate"
+        )
+    if not isinstance(request, dict):
+        raise ProviderIntakeError(
+            "intake request must be an object"
+        )
+
+    seeded_sources: list[str] = []
+    for item in candidates[:3]:
+        if not isinstance(item, dict):
+            raise ProviderIntakeError(
+                "intake candidate must be an object"
+            )
+        relative = item.get("relative_path")
+        if not isinstance(relative, str) or not relative:
+            raise ProviderIntakeError(
+                "intake candidate relative_path must be a string"
+            )
+        seeded_sources.append(relative)
+
+    resolved_id = _slug(str(manifest.get("intake_id") or intake_id))
+    intent = request.get("intent")
+    if not isinstance(intent, str) or not intent.strip():
+        intent = "game sound effect"
+    intent = intent.strip()
+
+    base_id = f"{resolved_id}-base"
+    base_recipe = {
+        "recipe_version": "0.1",
+        "id": base_id,
+        "intent": intent,
+        "layers": [
+            {
+                "source": seeded_sources[0],
+                "gain": 1.0,
+                "offset_ms": 0,
+            }
+        ],
+        "processing": {
+            "normalize": True,
+            "fade_out_ms": 0,
+        },
+    }
+
+    labels = ("A", "B", "C")
+    board_candidates: list[dict[str, Any]] = []
+    for index, source in enumerate(seeded_sources):
+        label = labels[index]
+        candidate_id = f"{resolved_id}-{label.lower()}"
+        board_candidates.append(
+            {
+                "id": candidate_id,
+                "label": label,
+                "parent_recipe_id": base_id,
+                "revision": 1,
+                "lineage": [
+                    {
+                        "from_recipe_id": base_id,
+                        "action": "fork",
+                        "revision": 1,
+                    }
+                ],
+                "recipe": {
+                    "recipe_version": "0.1",
+                    "id": candidate_id,
+                    "intent": intent,
+                    "layers": [
+                        {
+                            "source": source,
+                            "gain": 1.0,
+                            "offset_ms": 0,
+                        }
+                    ],
+                    "processing": {
+                        "normalize": True,
+                        "fade_out_ms": 0,
+                    },
+                },
+                "decision": {
+                    "status": "undecided",
+                    "reason": "",
+                },
+            }
+        )
+
+    board = {
+        "candidate_board_version": "0.1",
+        "intent": intent,
+        "base_recipe": base_recipe,
+        "active_candidate_id": board_candidates[0]["id"],
+        "selected_candidate_id": None,
+        "candidates": board_candidates,
+    }
+
+    parse_candidate_board(board)
+    return board
+
+
+def write_intake_candidate_seed(
+    audio_root: str | Path,
+    intake_id: str,
+    output_path: str | Path,
+) -> Path:
+    board = build_intake_candidate_seed(
+        audio_root,
+        intake_id,
+    )
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(output, board)
+    return output
