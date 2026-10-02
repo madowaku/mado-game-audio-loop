@@ -6,6 +6,11 @@ from pathlib import Path
 
 from .audio import scan_audio
 from .candidate import load_candidate_board
+from .decision_memory import (
+    decision_memory_view,
+    promote_preference_archive,
+    verify_decision_memory_against_archives,
+)
 from .evidence import build_evidence_bundle, verify_evidence_bundle
 from .intake import (
     build_provider_intake,
@@ -192,6 +197,34 @@ def build_parser() -> argparse.ArgumentParser:
     preference_replay_archive.add_argument(
         "--output",
         "-o",
+    )
+
+    decision_promote = sub.add_parser(
+        "decision-promote",
+        help="Explicitly promote one Preference Archive into Decision Memory",
+    )
+    decision_promote.add_argument("archive_id")
+    decision_promote.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    decision_memory = sub.add_parser(
+        "decision-memory",
+        help="Show the current explicit Decision Memory",
+    )
+    decision_memory.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    decision_memory_verify = sub.add_parser(
+        "decision-memory-verify",
+        help="Verify Decision Memory against promoted Preference Archives",
+    )
+    decision_memory_verify.add_argument(
+        "--audio-root",
+        required=True,
     )
 
     provenance_scan = sub.add_parser(
@@ -557,6 +590,43 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "decision-promote":
+        print(
+            json.dumps(
+                promote_preference_archive(
+                    args.audio_root,
+                    args.archive_id,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "decision-memory":
+        print(
+            json.dumps(
+                decision_memory_view(
+                    args.audio_root,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "decision-memory-verify":
+        print(
+            json.dumps(
+                verify_decision_memory_against_archives(
+                    args.audio_root,
+                ),
                 ensure_ascii=False,
                 indent=2,
             )
