@@ -13,7 +13,10 @@ from .intake import (
 )
 from .normalizer import normalize_provider_result_file
 from .preference import (
+    archive_preference_evidence,
+    list_preference_archives,
     load_preference_evidence,
+    replay_preference_archive,
     replay_preference_evidence,
     validate_preference_evidence,
 )
@@ -119,6 +122,43 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         "-o",
         help="Optional JSON file for the reconstructed replay plan",
+    )
+
+    preference_archive = sub.add_parser(
+        "preference-archive",
+        help="Archive Preference Evidence inside an MGAL audio workspace",
+    )
+    preference_archive.add_argument("evidence")
+    preference_archive.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    preference_archive.add_argument(
+        "--archive-id",
+        help="Optional stable archive ID",
+    )
+
+    preference_list = sub.add_parser(
+        "preference-list",
+        help="List archived Preference Sessions in an audio workspace",
+    )
+    preference_list.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    preference_replay_archive = sub.add_parser(
+        "preference-replay-archive",
+        help="Verify and replay one archived Preference Session",
+    )
+    preference_replay_archive.add_argument("archive_id")
+    preference_replay_archive.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    preference_replay_archive.add_argument(
+        "--output",
+        "-o",
     )
 
     provenance_scan = sub.add_parser(
@@ -401,6 +441,61 @@ def main(argv: list[str] | None = None) -> int:
         result = replay_preference_evidence(
             args.evidence,
             args.audio_root,
+        )
+        if args.output:
+            output = Path(args.output).resolve()
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "preference-archive":
+        evidence = load_preference_evidence(
+            args.evidence
+        )
+        print(
+            json.dumps(
+                archive_preference_evidence(
+                    evidence,
+                    args.audio_root,
+                    archive_id=args.archive_id,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "preference-list":
+        print(
+            json.dumps(
+                list_preference_archives(
+                    args.audio_root,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "preference-replay-archive":
+        result = replay_preference_archive(
+            args.audio_root,
+            args.archive_id,
         )
         if args.output:
             output = Path(args.output).resolve()
