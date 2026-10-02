@@ -144,55 +144,6 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 )
                 return
 
-            if parsed.path == "/api/candidate-plans":
-                raw_length = self.headers.get("Content-Length")
-                try:
-                    content_length = int(raw_length or "0")
-                except ValueError:
-                    self._send_json_error(
-                        HTTPStatus.BAD_REQUEST,
-                        "invalid Content-Length",
-                    )
-                    return
-                if content_length <= 0 or content_length > 200_000:
-                    self._send_json_error(
-                        HTTPStatus.BAD_REQUEST,
-                        "candidate plan payload size is invalid",
-                    )
-                    return
-                try:
-                    request_data = json.loads(
-                        self.rfile.read(content_length).decode("utf-8")
-                    )
-                except (
-                    UnicodeDecodeError,
-                    json.JSONDecodeError,
-                ):
-                    self._send_json_error(
-                        HTTPStatus.BAD_REQUEST,
-                        "request body must be valid JSON",
-                    )
-                    return
-                if not isinstance(request_data, dict):
-                    self._send_json_error(
-                        HTTPStatus.BAD_REQUEST,
-                        "request body must contain an object",
-                    )
-                    return
-                try:
-                    payload = create_candidate_plan_from_brief_id(
-                        root,
-                        request_data.get("brief_id"),
-                    )
-                except CandidatePlanError as exc:
-                    self._send_json_error(
-                        HTTPStatus.BAD_REQUEST,
-                        str(exc),
-                    )
-                    return
-                self._send_json(payload)
-                return
-
             if parsed.path == "/api/variation-briefs":
                 self._send_json(
                     list_variation_briefs(root)
@@ -315,6 +266,55 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+
+            if parsed.path == "/api/candidate-plans":
+                raw_length = self.headers.get("Content-Length")
+                try:
+                    content_length = int(raw_length or "0")
+                except ValueError:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid Content-Length",
+                    )
+                    return
+                if content_length <= 0 or content_length > 200_000:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "candidate plan payload size is invalid",
+                    )
+                    return
+                try:
+                    request_data = json.loads(
+                        self.rfile.read(content_length).decode("utf-8")
+                    )
+                except (
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                ):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must be valid JSON",
+                    )
+                    return
+                if not isinstance(request_data, dict):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must contain an object",
+                    )
+                    return
+                try:
+                    payload = create_candidate_plan_from_brief_id(
+                        root,
+                        request_data.get("brief_id"),
+                    )
+                except CandidatePlanError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
+                return
 
             if parsed.path == "/api/variation-briefs":
                 raw_length = self.headers.get("Content-Length")
