@@ -15,6 +15,11 @@ from .decision_memory import (
     promote_preference_archive,
     verify_decision_memory_against_archives,
 )
+from .delta_inspector import (
+    build_delta_inspector_pack,
+    load_delta_inspector_pack,
+    verify_delta_inspector_pack_against_current,
+)
 from .evidence import build_evidence_bundle, verify_evidence_bundle
 from .intake import (
     build_provider_intake,
@@ -257,6 +262,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     decision_context_verify.add_argument("context_pack")
     decision_context_verify.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    delta_inspect = sub.add_parser(
+        "decision-context-inspect",
+        help="Compare the current Recipe with winner/loser Recipes in a Decision Context Pack",
+    )
+    delta_inspect.add_argument("context_pack")
+    delta_inspect.add_argument("recipe")
+    delta_inspect.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    delta_inspect.add_argument(
+        "--output",
+        "-o",
+        help="Optional Delta Inspector Pack JSON output path",
+    )
+
+    delta_verify = sub.add_parser(
+        "decision-context-inspect-verify",
+        help="Verify a Delta Inspector Pack against current Decision Memory, Context retrieval, Recipe, and sources",
+    )
+    delta_verify.add_argument("inspector_pack")
+    delta_verify.add_argument(
         "--audio-root",
         required=True,
     )
@@ -702,6 +733,59 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(
                 verify_decision_context_pack_against_memory(
                     args.context_pack,
+                    args.audio_root,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "decision-context-inspect":
+        context_pack = json.loads(
+            Path(args.context_pack).read_text(
+                encoding="utf-8"
+            )
+        )
+        recipe_data = json.loads(
+            Path(args.recipe).read_text(
+                encoding="utf-8"
+            )
+        )
+        result = build_delta_inspector_pack(
+            args.audio_root,
+            context_pack,
+            recipe_data,
+        )
+        if args.output:
+            output = Path(args.output).resolve()
+            output.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            output.write_text(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "decision-context-inspect-verify":
+        print(
+            json.dumps(
+                verify_delta_inspector_pack_against_current(
+                    args.inspector_pack,
                     args.audio_root,
                 ),
                 ensure_ascii=False,
