@@ -11,7 +11,10 @@ import webbrowser
 from .audio import read_wav_metadata
 from .preference import (
     PreferenceEvidenceError,
+    archive_preference_evidence,
     compile_preference_evidence,
+    list_preference_archives,
+    replay_preference_archive,
 )
 from .intake import (
     ProviderIntakeError,
@@ -87,6 +90,34 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 self._send_json(build_catalog(root))
                 return
 
+            if parsed.path == "/api/preferences":
+                self._send_json(
+                    list_preference_archives(root)
+                )
+                return
+
+            if (
+                parsed.path.startswith("/api/preferences/")
+                and parsed.path.endswith("/replay")
+            ):
+                encoded_id = parsed.path[
+                    len("/api/preferences/") : -len("/replay")
+                ].strip("/")
+                archive_id = unquote(encoded_id)
+                try:
+                    payload = replay_preference_archive(
+                        root,
+                        archive_id,
+                    )
+                except PreferenceEvidenceError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
+                return
+
             if (
                 parsed.path.startswith("/api/intakes/")
                 and parsed.path.endswith("/seed-board")
@@ -134,7 +165,10 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
-            if parsed.path != "/api/preference-evidence":
+            if parsed.path not in {
+                "/api/preference-evidence",
+                "/api/preference-archive",
+            }:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
 
@@ -181,6 +215,26 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 self._send_json_error(
                     HTTPStatus.BAD_REQUEST,
                     str(exc),
+                )
+                return
+
+            if parsed.path == "/api/preference-archive":
+                try:
+                    archive = archive_preference_evidence(
+                        evidence,
+                        root,
+                    )
+                except PreferenceEvidenceError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(
+                    {
+                        "evidence": evidence,
+                        "archive": archive,
+                    }
                 )
                 return
 
