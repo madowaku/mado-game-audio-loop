@@ -3446,6 +3446,248 @@ No Recipe materialization or Candidate mutation control is exposed.
 - existing M2.3 Variation Brief remains unchanged
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M2.5 Candidate Plan → Recipe Variation Materializer
+
+Goal:
+
+**Materialize a ready M2.4 Candidate Plan into deterministic A/B/C Recipe artifacts while leaving Candidate Board and selection state untouched.**
+
+#### Materialized Recipe Set 0.1
+
+```text
+materialized_recipe_set_version
+materialization_id
+materialization_semantics
+candidate_plan
+source_recipe
+source_recipe_summary
+experiment
+variants[]
+authority
+```
+
+Semantics:
+
+```text
+whole-recipe-scalar-v1
+```
+
+Authority:
+
+```text
+candidate_board_mutation = none
+candidate_selection = none
+source_generation = none
+```
+
+#### Inputs
+
+```text
+audio_root
+validated Candidate Plan
+current source Recipe
+```
+
+The Candidate Plan must report `ready_for_materialization=true`.
+
+The source Recipe must pass Recipe 0.1 validation.
+
+Its live M2.2-style summary must exactly equal `candidate_plan.basis.current_recipe`.
+
+This includes content-addressed source IDs.
+
+#### Supported materialization
+
+M2.5 supports only:
+
+```text
+dimension: gain | offset | fade
+action: increase | decrease
+```
+
+Gain:
+
+- additive scalar delta
+- applies to every layer
+- rounded to six decimal places
+- scope = all_layers
+
+Offset:
+
+- integer millisecond delta
+- applies to every layer
+- negative resulting offset is rejected
+- scope = all_layers
+
+Fade:
+
+- integer millisecond delta
+- applies to processing.fade_out_ms
+- negative resulting fade is rejected
+- scope = processing
+
+Plans using unsupported dimensions/actions are rejected by the materializer rather than guessed.
+
+#### Variant materialization
+
+A:
+
+```text
+control
+source Recipe parameters unchanged
+deterministic new Recipe ID
+application = null
+```
+
+B:
+
+```text
+hypothesis
+apply exact B Plan change
+```
+
+C:
+
+```text
+contrast
+apply exact C Plan change
+```
+
+M2.5 does not derive C. M2.4 remains the source of truth for contrast planning.
+
+#### IDs
+
+Each variant Recipe ID derives from:
+
+```text
+source Recipe ID
+Candidate Plan ID
+slot
+```
+
+Each variant stores a canonical Recipe SHA-256.
+
+The whole Set receives:
+
+```text
+materialized:<20-char canonical SHA-256 prefix>
+```
+
+#### Workspace layout
+
+```text
+audio/.mgal/materialized-recipe-sets/<hash>/
+├── set.json
+├── A-control.json
+├── B-hypothesis.json
+└── C-contrast.json
+```
+
+Repeated identical materialization reuses the same directory.
+
+Loading a workspace directory verifies that every split Recipe file exists and equals the matching Recipe embedded in `set.json`.
+
+#### Validation
+
+Standalone Set validation:
+
+1. validates embedded Candidate Plan
+2. requires Plan materialization readiness
+3. validates source Recipe
+4. checks source Recipe canonical SHA
+5. requires full source Recipe summary equality with Plan basis
+6. requires experiment equality with Plan
+7. recomputes all A/B/C Recipes
+8. requires exact variant equality
+9. validates authority boundary
+10. recomputes materialization ID
+
+#### Fresh verification
+
+Verification with `audio_root` additionally:
+
+1. safely resolves source Recipe WAV paths
+2. recomputes current source SHA-256 identities
+3. rebuilds source Recipe summary
+4. requires exact equality with materialization snapshot
+5. requires exact equality with Candidate Plan basis
+
+Source-byte drift therefore invalidates a saved Set.
+
+#### CLI
+
+```bash
+mgal candidate-plan-materialize \
+  plan.json current-recipe.json \
+  --audio-root ./audio \
+  [--output recipe-set.json]
+
+mgal materialized-recipe-list \
+  --audio-root ./audio
+
+mgal materialized-recipe-verify \
+  recipe-set.json \
+  --audio-root ./audio
+```
+
+#### Server API
+
+```text
+GET  /api/materialized-recipe-sets
+POST /api/materialized-recipe-sets
+```
+
+POST request:
+
+```text
+plan_id
+current_recipe
+```
+
+The server loads the saved Plan by content-addressed ID before materialization.
+
+#### Browser UI
+
+Ready and supported Candidate Plans expose `Materialize recipes`.
+
+An already materialized Plan shows `Recipes ready`.
+
+Unsupported but otherwise ready Plans show `Materializer unsupported`.
+
+The Materialized Recipe shelf displays A/B/C Recipe IDs and exact application metadata.
+
+Browser verifies returned authority before accepting success.
+
+#### M2.5 acceptance
+
+- ready scalar Candidate Plan can materialize three Recipe 0.1 documents
+- A preserves current parameters
+- B applies exact hypothesis scalar change
+- C applies exact planned contrast scalar change
+- gain applies additively to all layers
+- offset applies integer ms delta to all layers
+- fade applies integer ms delta to processing
+- negative offset/fade results are rejected
+- unsupported dimensions/actions are rejected, not guessed
+- source Recipe must exactly match Plan current Recipe snapshot
+- live source SHA identities participate in that match
+- materialization embeds Candidate Plan and source Recipe snapshots
+- variants have deterministic Recipe IDs and SHA-256
+- Set has deterministic content-derived ID
+- identical Set saves are idempotent
+- workspace stores set.json plus A/B/C Recipe files
+- split Recipe missing/tampering is detected
+- semantic Recipe tampering is rejected even after rehashing Set ID
+- source drift is detected during verification
+- CLI supports materialize/list/verify
+- server supports list/materialize
+- Browser exposes materialization only for supported ready Plans
+- Browser displays saved Materialized Recipe Sets
+- Browser materialization does not mutate Candidate Board
+- Set contains no Candidate selection authority
+- existing M2.4 Candidate Plans remain unchanged
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
