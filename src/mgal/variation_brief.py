@@ -179,6 +179,13 @@ def _validate_change(
     }
 
 
+def validate_planned_change(
+    change: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and normalize a Variation Brief planned change."""
+    return _validate_change(change)
+
+
 def _reference_from_inspector(
     inspector: dict[str, Any],
     reference: dict[str, Any] | None,
