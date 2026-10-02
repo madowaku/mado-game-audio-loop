@@ -17,6 +17,11 @@ from .delta_inspector import (
     DeltaInspectorError,
     build_delta_inspector_pack,
 )
+from .variation_brief import (
+    VariationBriefError,
+    create_variation_brief,
+    list_variation_briefs,
+)
 from .decision_memory import (
     DecisionMemoryError,
     decision_memory_view,
@@ -131,6 +136,12 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                         evidence_hash in promoted_hashes
                     )
                 self._send_json(archives)
+                return
+
+            if parsed.path == "/api/variation-briefs":
+                self._send_json(
+                    list_variation_briefs(root)
+                )
                 return
 
             if parsed.path == "/api/decision-memory":
@@ -249,6 +260,56 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+
+            if parsed.path == "/api/variation-briefs":
+                raw_length = self.headers.get("Content-Length")
+                try:
+                    content_length = int(raw_length or "0")
+                except ValueError:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid Content-Length",
+                    )
+                    return
+                if content_length <= 0 or content_length > 2_000_000:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "variation brief payload size is invalid",
+                    )
+                    return
+                try:
+                    request_data = json.loads(
+                        self.rfile.read(content_length).decode("utf-8")
+                    )
+                except (
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                ):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must be valid JSON",
+                    )
+                    return
+                if not isinstance(request_data, dict):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must contain an object",
+                    )
+                    return
+                try:
+                    payload = create_variation_brief(
+                        root,
+                        request_data.get("inspector"),
+                        request_data.get("human_input"),
+                    )
+                except VariationBriefError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
+                return
 
             if parsed.path == "/api/decision-context-inspect":
                 raw_length = self.headers.get("Content-Length")
