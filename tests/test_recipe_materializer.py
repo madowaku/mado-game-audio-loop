@@ -637,3 +637,45 @@ def test_materialized_list_contains_no_candidate_selection(
         "apply_winner",
     ):
         assert token not in raw
+
+
+def test_workspace_materialization_detects_split_recipe_tamper(
+    tmp_path: Path,
+):
+    audio_root = _workspace(
+        tmp_path
+    )
+    result = materialize_candidate_plan(
+        audio_root,
+        _plan(audio_root),
+        _recipe(),
+    )
+    directory = Path(
+        result["saved"]["path"]
+    )
+    b_path = (
+        directory
+        / "B-hypothesis.json"
+    )
+    b = json.loads(
+        b_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    b["layers"][0]["gain"] = 9
+    b_path.write_text(
+        json.dumps(b),
+        encoding="utf-8",
+    )
+
+    from mgal.recipe_materializer import (
+        load_materialized_recipe_set,
+    )
+
+    with pytest.raises(
+        RecipeMaterializerError,
+        match="does not match set.json",
+    ):
+        load_materialized_recipe_set(
+            directory
+        )
