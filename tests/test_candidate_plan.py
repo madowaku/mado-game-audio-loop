@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from mgal.cli import main
 from mgal.candidate_plan import (
     CandidatePlanError,
     compile_candidate_plan,
@@ -12,6 +13,7 @@ from mgal.candidate_plan import (
 )
 from mgal.variation_brief import (
     _sha256_json,
+    save_variation_brief,
 )
 
 
@@ -375,3 +377,93 @@ def test_candidate_plan_rejects_semantic_change_tamper():
         validate_candidate_plan(
             plan
         )
+
+
+def test_candidate_plan_can_compile_from_saved_brief_id(
+    tmp_path: Path,
+):
+    brief = _brief()
+    save_variation_brief(
+        tmp_path,
+        brief,
+    )
+
+    from mgal.candidate_plan import (
+        create_candidate_plan_from_brief_id,
+    )
+
+    result = create_candidate_plan_from_brief_id(
+        tmp_path,
+        brief["brief_id"],
+    )
+
+    assert result["plan"][
+        "variation_brief_id"
+    ] == brief["brief_id"]
+    assert result["plan"][
+        "ready_for_materialization"
+    ] is True
+
+
+def test_candidate_plan_cli_compile_list_validate(
+    tmp_path: Path,
+    capsys,
+):
+    brief = _brief()
+    brief_path = tmp_path / "brief.json"
+    brief_path.write_text(
+        json.dumps(brief),
+        encoding="utf-8",
+    )
+    output = tmp_path / "plan.json"
+
+    assert main(
+        [
+            "candidate-plan-compile",
+            str(brief_path),
+            "--audio-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    compiled = json.loads(
+        capsys.readouterr().out
+    )
+    assert compiled["plan"][
+        "ready_for_materialization"
+    ] is True
+    assert output.is_file()
+
+    assert main(
+        [
+            "candidate-plan-list",
+            "--audio-root",
+            str(tmp_path),
+        ]
+    ) == 0
+    listing = json.loads(
+        capsys.readouterr().out
+    )
+    assert len(listing) == 1
+    assert [
+        item["role"]
+        for item in listing[0][
+            "variants"
+        ]
+    ] == [
+        "control",
+        "hypothesis",
+        "contrast",
+    ]
+
+    assert main(
+        [
+            "candidate-plan-validate",
+            str(output),
+        ]
+    ) == 0
+    validated = json.loads(
+        capsys.readouterr().out
+    )
+    assert validated["ok"] is True
