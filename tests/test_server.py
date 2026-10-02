@@ -4,6 +4,12 @@ import wave
 
 import pytest
 
+from mgal.intake import build_provider_intake
+from mgal.provider import (
+    FixtureGeneratedProvider,
+    SourceRequest,
+    write_provider_result,
+)
 from mgal.server import build_catalog, resolve_audio_path
 
 
@@ -37,3 +43,37 @@ def test_resolve_audio_path_rejects_escape(tmp_path: Path):
 
     with pytest.raises(PermissionError):
         resolve_audio_path(audio, "../outside.wav")
+
+
+def test_build_catalog_enriches_provider_intake_metadata(tmp_path: Path):
+    provider = FixtureGeneratedProvider(tmp_path / "raw")
+    result = provider.provide(
+        SourceRequest(
+            request_id="impact",
+            intent="short metallic impact",
+            count=1,
+            seed="42",
+        )
+    )
+    result_path = write_provider_result(
+        result,
+        tmp_path / "provider-result.json",
+    )
+    audio_root = tmp_path / "audio"
+    build_provider_intake(
+        result_path,
+        audio_root,
+        intake_id="impact-run",
+    )
+
+    catalog = build_catalog(audio_root)
+
+    assert len(catalog) == 1
+    row = catalog[0]
+    assert row["relative_path"].startswith("incoming/impact-run/")
+    assert row["bytes"] > 0
+    assert row["intake"]["intake_id"] == "impact-run"
+    assert row["intake"]["provider_id"] == "fixture-generated"
+    assert row["intake"]["source_type"] == "generated"
+    assert row["intake"]["prompt"] == "short metallic impact"
+    assert row["intake"]["normalization_profile_id"] == "mgal-pcm16-mono-44100-v1"
