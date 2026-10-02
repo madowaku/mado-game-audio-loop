@@ -365,9 +365,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
             provider = FixtureGeneratedProvider(artifact_root)
         else:
-            artifact_root = getattr(args, "artifact_root", None) or "."
+            artifact_root = getattr(args, "artifact_root", None)
+            if args.command == "source-provide" and not artifact_root:
+                parser = build_parser()
+                parser.error(
+                    "--artifact-root is required for provider=stability"
+                )
             provider = StabilityAudioProvider(
-                artifact_root,
+                artifact_root or ".",
                 allow_paid=getattr(args, "allow_paid", False),
                 api_key_env=getattr(
                     args,
