@@ -5,6 +5,7 @@ import wave
 
 import pytest
 
+from mgal.cli import main
 from mgal.decision_memory import (
     DecisionMemoryError,
     decision_memory_path,
@@ -260,3 +261,64 @@ def test_decision_memory_detects_derived_difference_tamper(tmp_path: Path):
         match="observed differences",
     ):
         decision_memory_view(audio_root)
+
+
+def test_decision_memory_cli_promote_view_and_verify(
+    tmp_path: Path,
+    capsys,
+):
+    audio_root = _archive(tmp_path)
+
+    assert main(
+        [
+            "decision-promote",
+            "memory-session",
+            "--audio-root",
+            str(audio_root),
+        ]
+    ) == 0
+    promoted = json.loads(capsys.readouterr().out)
+    assert promoted["ok"] is True
+    assert promoted["memory"]["entry_count"] == 3
+
+    assert main(
+        [
+            "decision-memory",
+            "--audio-root",
+            str(audio_root),
+        ]
+    ) == 0
+    view = json.loads(capsys.readouterr().out)
+    assert view["summary"]["promotion_count"] == 1
+    assert view["summary"]["entry_count"] == 3
+
+    assert main(
+        [
+            "decision-memory-verify",
+            "--audio-root",
+            str(audio_root),
+        ]
+    ) == 0
+    verified = json.loads(capsys.readouterr().out)
+    assert verified["promotions_verified"] == 1
+    assert verified["entries_verified"] == 3
+
+
+def test_decision_memory_records_observations_not_automatic_rules(
+    tmp_path: Path,
+):
+    audio_root = _archive(tmp_path)
+    promote_preference_archive(
+        audio_root,
+        "memory-session",
+    )
+
+    view = decision_memory_view(audio_root)
+    raw = json.dumps(view)
+
+    assert "recommended_candidate" not in raw
+    assert "auto_select" not in raw
+    assert "preference_score" not in raw
+    assert "winner_candidate_id" in raw
+    assert "loser_candidate_id" in raw
+    assert "observed_differences" in raw
