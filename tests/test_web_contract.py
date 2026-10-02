@@ -105,6 +105,10 @@ def test_candidate_board_static_contract():
         "renderPreferenceReplay",
         "playPreferenceReplaySide",
         "replayRecipeLayers",
+        "recoverPreferenceArchive",
+        "/recover",
+        "Recover sources",
+        "source_status",
     ):
         assert token in js
 
@@ -313,3 +317,20 @@ def test_preference_archive_replay_ui_contract():
     assert ".preference-archive-card" in css
     assert ".preference-replay-panel" in css
     assert ".preference-replay-chip" in css
+
+
+def test_preference_source_recovery_ui_contract():
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "entry.recoverable" in js
+    assert '"Sources unresolved · "' in js
+    assert '"Recover sources"' in js
+    assert 'method: "POST"' in js
+    assert '"/recover"' in js
+    assert "recovery.resolved_count" in js
+    assert "recovery.ambiguous_count" in js
+    assert "recovery.missing_count" in js
+    assert 'entry.source_status === "relinked"' in js
+    assert '"sources relinked by SHA-256"' in js
+    assert ".recovery-action" in css
