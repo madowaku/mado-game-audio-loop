@@ -12,6 +12,14 @@ from .provenance import (
     validate_provenance_ledger,
     write_provenance_ledger,
 )
+from .provider import (
+    FixtureGeneratedProvider,
+    LocalFileProvider,
+    SourceRequest,
+    provider_result_to_dict,
+    write_provider_provenance_ledger,
+    write_provider_result,
+)
 from .recipe import load_recipe
 from .recovery import recover_sources, write_relink_map
 from .release import build_release_pack, verify_release_pack
@@ -129,6 +137,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify a Release / Attribution Pack",
     )
     verify_release.add_argument("pack_dir")
+
+    source_provide = sub.add_parser(
+        "source-provide",
+        help="Run a Source Provider through the MGAL v1.0 contract",
+    )
+    source_provide.add_argument(
+        "--provider",
+        choices=("local", "fixture-generated"),
+        required=True,
+    )
+    source_provide.add_argument("--request-id", required=True)
+    source_provide.add_argument("--intent", required=True)
+    source_provide.add_argument("--count", type=int, default=4)
+    source_provide.add_argument("--hint", action="append", default=[])
+    source_provide.add_argument("--duration-ms", type=int)
+    source_provide.add_argument("--seed")
+    source_provide.add_argument("--audio-root")
+    source_provide.add_argument("--provenance-ledger")
+    source_provide.add_argument("--artifact-root")
+    source_provide.add_argument("--output", "-o")
+    source_provide.add_argument("--provenance-output")
+
+    provider_describe = sub.add_parser(
+        "provider-describe",
+        help="Describe one Source Provider and its capabilities",
+    )
+    provider_describe.add_argument(
+        "--provider",
+        choices=("local", "fixture-generated"),
+        required=True,
+    )
+    provider_describe.add_argument("--audio-root")
+    provider_describe.add_argument("--provenance-ledger")
+    provider_describe.add_argument("--artifact-root")
 
     recover = sub.add_parser(
         "recover-sources",
@@ -273,6 +315,61 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 verify_release_pack(args.pack_dir),
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command in {"source-provide", "provider-describe"}:
+        if args.provider == "local":
+            if not args.audio_root:
+                parser = build_parser()
+                parser.error("--audio-root is required for provider=local")
+            provider = LocalFileProvider(
+                args.audio_root,
+                getattr(args, "provenance_ledger", None),
+            )
+        else:
+            artifact_root = getattr(args, "artifact_root", None)
+            if not artifact_root:
+                parser = build_parser()
+                parser.error(
+                    "--artifact-root is required for provider=fixture-generated"
+                )
+            provider = FixtureGeneratedProvider(artifact_root)
+
+        if args.command == "provider-describe":
+            print(
+                json.dumps(
+                    provider.describe(),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+
+        request = SourceRequest(
+            request_id=args.request_id,
+            intent=args.intent,
+            count=args.count,
+            hints=tuple(args.hint),
+            duration_ms=args.duration_ms,
+            seed=args.seed,
+        )
+        result = provider.provide(request)
+
+        if args.output:
+            write_provider_result(result, args.output)
+        if args.provenance_output:
+            write_provider_provenance_ledger(
+                result,
+                args.provenance_output,
+            )
+
+        print(
+            json.dumps(
+                provider_result_to_dict(result),
+                ensure_ascii=False,
                 indent=2,
             )
         )
