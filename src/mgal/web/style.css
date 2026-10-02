@@ -569,7 +569,7 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   border-color: #6f4141;
 }
 
-.preference-archive-card.invalid:has(.recovery-action) {
+.preference-archive-card.recoverable {
   border-color: #8a7440;
 }
 
