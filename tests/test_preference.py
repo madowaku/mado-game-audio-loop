@@ -6,6 +6,7 @@ import wave
 import pytest
 
 from mgal.cli import main
+from mgal.evidence import build_evidence_bundle, verify_evidence_bundle
 from mgal.preference import (
     PreferenceEvidenceError,
     compile_preference_evidence,
@@ -281,3 +282,45 @@ def test_preference_cli_validate_and_replay(tmp_path: Path, capsys):
     assert replay["ok"] is True
     assert replay["sources_verified"] == 3
     assert replay_path.is_file()
+
+
+def test_preference_evidence_can_attach_to_main_evidence_bundle(
+    tmp_path: Path,
+):
+    for name, value in (("a.wav", 100), ("b.wav", 200), ("c.wav", 300)):
+        _write_wav(tmp_path / name, value)
+
+    board = _board(selected="candidate-b")
+    board_path = tmp_path / "board.json"
+    board_path.write_text(
+        json.dumps(board),
+        encoding="utf-8",
+    )
+
+    preference = compile_preference_evidence(
+        _preference_payload(
+            board,
+            applied="candidate-b",
+        ),
+        tmp_path,
+    )
+    preference_path = tmp_path / "preference.json"
+    preference_path.write_text(
+        json.dumps(preference),
+        encoding="utf-8",
+    )
+
+    bundle = build_evidence_bundle(
+        board_path,
+        tmp_path,
+        tmp_path / "bundle",
+        preference_evidence_path=preference_path,
+    )
+
+    assert (bundle / "preference-session.json").is_file()
+    verified = verify_evidence_bundle(bundle)
+    assert verified["preference"]["pairs"] == 3
+    assert (
+        verified["preference"]["applied_candidate_id"]
+        == "candidate-b"
+    )
