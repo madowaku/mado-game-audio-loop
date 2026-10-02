@@ -9,6 +9,10 @@ from urllib.parse import quote, unquote, urlparse
 import webbrowser
 
 from .audio import read_wav_metadata
+from .preference import (
+    PreferenceEvidenceError,
+    compile_preference_evidence,
+)
 from .intake import (
     ProviderIntakeError,
     build_intake_candidate_seed,
@@ -127,6 +131,60 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             self.send_error(HTTPStatus.NOT_FOUND)
+
+        def do_POST(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/preference-evidence":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+
+            raw_length = self.headers.get("Content-Length")
+            try:
+                content_length = int(raw_length or "0")
+            except ValueError:
+                self._send_json_error(
+                    HTTPStatus.BAD_REQUEST,
+                    "invalid Content-Length",
+                )
+                return
+
+            if content_length <= 0 or content_length > 2_000_000:
+                self._send_json_error(
+                    HTTPStatus.BAD_REQUEST,
+                    "preference evidence payload size is invalid",
+                )
+                return
+
+            try:
+                body = self.rfile.read(content_length)
+                payload = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._send_json_error(
+                    HTTPStatus.BAD_REQUEST,
+                    "request body must be valid JSON",
+                )
+                return
+
+            if not isinstance(payload, dict):
+                self._send_json_error(
+                    HTTPStatus.BAD_REQUEST,
+                    "request body must contain an object",
+                )
+                return
+
+            try:
+                evidence = compile_preference_evidence(
+                    payload,
+                    root,
+                )
+            except PreferenceEvidenceError as exc:
+                self._send_json_error(
+                    HTTPStatus.BAD_REQUEST,
+                    str(exc),
+                )
+                return
+
+            self._send_json(evidence)
 
         def _send_json_error(
             self,
