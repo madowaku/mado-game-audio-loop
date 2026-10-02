@@ -349,6 +349,7 @@ class LocalFileProvider:
     def provide(self, request: SourceRequest) -> ProviderResult:
         request.validate()
         tokens = _search_tokens(request)
+        explicit_hints = any(hint.strip() for hint in request.hints)
 
         paths = [
             path
@@ -365,7 +366,7 @@ class LocalFileProvider:
                     for token in tokens
                 )
             ]
-            if matched:
+            if matched or explicit_hints:
                 paths = matched
 
         candidates: list[SourceCandidate] = []
