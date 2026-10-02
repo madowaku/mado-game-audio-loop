@@ -1569,6 +1569,15 @@ async function loadDecisionContext() {
         result.error || "Could not retrieve Decision Context"
       );
     }
+    if (
+      !result.usage ||
+      result.usage.role !== "reference_only" ||
+      result.usage.selection_effect !== "none"
+    ) {
+      throw new Error(
+        "Decision Context usage boundary is invalid"
+      );
+    }
 
     state.decisionContext = result;
     state.decisionContextStale = false;
