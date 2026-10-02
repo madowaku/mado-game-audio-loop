@@ -2,327 +2,289 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → audition → mix → compare → decide → bundle → replay → recover → provenance → release**
+**provide → normalize → audition → mix → compare → decide → bundle → replay → provenance → release**
 
-## Current milestone: M1.1 Generated Audio Adapter
+## Current milestone: M1.2 Provider Audio Normalizer
 
-MGAL now has a production generated-audio adapter for the Stability AI Stable Audio API.
+MGAL now normalizes Provider audio into one deterministic internal WAV profile before mixing and Evidence rendering.
 
-The Provider boundary remains unchanged:
+The core rule is:
 
-```text
-text intent
-    ↓
-StabilityAudioProvider
-    ↓
-Stable Audio 3 API
-    ↓
-local WAV artifacts
-    ↓
-MGAL Source Provider Contract 1.0
-    ├── SHA-256 identity
-    ├── audio metadata
-    └── provenance/license metadata
-    ↓
-Audition / Mix / Candidate Board / Evidence / Release
-```
+> **Keep the provider original. Mix the canonical derivative. Preserve the lineage between both.**
 
-The adapter is deliberately thin. Stability-specific authentication, polling, model parameters, and API URLs stay inside the adapter. MGAL core still sees only normal SourceCandidates.
-
-## Current Stable Audio API contract
-
-M1.1 targets the hosted Stable Audio 3.0 text-to-audio endpoint documented by Stability AI:
-
-- model: `stable-audio-3`
-- asynchronous generation
-- WAV output
-- duration: 1–380 seconds
-- steps: 4–8
-- cfg scale: 1–25
-- API key environment variable: `STABILITY_API_KEY`
-
-At implementation time, Stability AI documents Stable Audio 3.0 at 26 credits per successful generation. Pricing can change, so check the official API docs before live use.
-
-Official docs:
-
-- https://platform.stability.ai/docs/api-reference
-- https://platform.stability.ai/legal/terms-of-service
-
-## Paid-generation safety
-
-MGAL will not call the paid API unless the command explicitly includes:
+Canonical profile:
 
 ```text
---allow-paid
+profile_id   = mgal-pcm16-mono-44100-v1
+sample rate  = 44,100 Hz
+channels     = mono
+sample width = 16-bit PCM
+container    = WAV
 ```
 
-For the Stability provider, omitted `--count` defaults to **1 candidate**, not the generic Provider default of 4.
+This matches the current deterministic renderer contract and removes sample-rate/channel differences between Provider sources.
 
-This prevents an accidental four-generation paid request.
+## Why M1.2 exists
 
-`--artifact-root` is also mandatory for live Stability generation so paid outputs cannot silently land in the repository root.
+A generated Provider may return stereo 44.1/48 kHz audio while older local assets may be mono 8/22/44.1 kHz.
 
-## API key setup
-
-The key is read from the environment only. It is never accepted as a normal CLI argument and is never stored in Provider Result JSON or provenance.
-
-PowerShell:
-
-```powershell
-$env:STABILITY_API_KEY="your-key-here"
-```
-
-The environment-variable name can be changed with:
+Before M1.2:
 
 ```text
---api-key-env OTHER_ENV_NAME
+local 8k mono
++
+generated 48k stereo
+        ↓
+renderer mismatch
 ```
 
-## Describe without spending anything
+After M1.2:
+
+```text
+local Provider Result
+        ↓
+Provider Audio Normalizer
+        ↓
+44.1k mono PCM16
+
+generated Provider Result
+        ↓
+Provider Audio Normalizer
+        ↓
+44.1k mono PCM16
+
+        ↓
+same Layer Mixer / Recipe / Evidence renderer
+```
+
+## Normalize a saved Provider Result
+
+Provider Result JSON is now reloadable.
 
 ```bash
-mgal provider-describe --provider stability
+mgal provider-normalize ./provider-runs/heavy-slash.json \
+  --output-root ./audio/canonical/heavy-slash \
+  --output ./provider-runs/heavy-slash-normalized.json \
+  --provenance-output ./provider-runs/heavy-slash-normalized-provenance.json
 ```
 
-This requires no key, creates no artifacts, and performs no network request.
+The original Provider artifacts are not modified.
 
-The description exposes:
+The normalized Provider Result points to the new canonical artifact root.
 
-- network = true
-- generates_audio = true
-- paid_generation = true
-- async_api = true
-- model = stable-audio-3
-- supported duration / steps / cfg-scale ranges
-- explicit paid opt-in requirement
+## Normalization behavior
 
-## Generate one game SFX candidate
+### Already canonical
 
-A practical workspace layout is to generate directly underneath the folder already served by the Browser Audition Board:
+A 44.1kHz, mono, 16-bit PCM WAV uses a byte-preserving copy.
 
 ```text
-audio/
-├── local/
-└── generated/
-    └── stability/
+original SHA-256 == normalized SHA-256
+passthrough = true
+algorithm = byte-preserving-copy
 ```
 
-Generate:
+### Non-canonical PCM WAV
+
+MGAL currently:
+
+1. decodes PCM WAV samples
+2. averages channels to mono
+3. converts sample depth to signed 16-bit
+4. linearly resamples to 44.1kHz
+5. writes deterministic PCM16 mono WAV
+
+```text
+algorithm = channel-average+linear-resample+pcm16
+```
+
+Supported PCM sample widths are currently 8, 16, 24, and 32-bit integer WAV.
+
+Compressed WAV is rejected.
+
+## Original and normalized identities
+
+The normalized artifact becomes the active source identity used by Recipes and Evidence.
+
+Its provenance carries a normalization lineage:
+
+```json
+{
+  "source_id": "sha256:<normalized>",
+  "sha256": "<normalized>",
+  "normalization": {
+    "profile_id": "mgal-pcm16-mono-44100-v1",
+    "passthrough": false,
+    "original": {
+      "source_id": "sha256:<original>",
+      "sha256": "<original>",
+      "bytes": 12345,
+      "relative_path": "provider-original.wav"
+    },
+    "normalized": {
+      "source_id": "sha256:<normalized>",
+      "sha256": "<normalized>",
+      "bytes": 6789,
+      "sample_rate": 44100,
+      "channels": 1,
+      "sample_width": 2
+    }
+  }
+}
+```
+
+So downstream Evidence can answer both:
+
+- which exact canonical bytes were mixed
+- which exact Provider bytes those canonical bytes came from
+
+## Provenance validation
+
+M0.8 provenance validation now understands normalization lineage.
+
+It checks:
+
+- normalization profile ID
+- passthrough flag
+- algorithm
+- original source ID ↔ original SHA-256
+- normalized source ID ↔ normalized SHA-256
+- normalized identity ↔ top-level provenance identity
+
+A broken lineage is rejected even if the top-level source hash is otherwise valid.
+
+## Release lineage
+
+`PROVENANCE_REPORT.json` now includes the normalization object.
+
+A final Release Pack therefore retains:
+
+```text
+Release WAV
+   ↓
+canonical source SHA-256
+   ↓
+normalization lineage
+   ↓
+original Provider SHA-256
+   ↓
+provider generation / recording / origin metadata
+```
+
+## Stable Audio workflow
+
+A practical generated-audio loop is now:
 
 ```bash
 mgal source-provide \
   --provider stability \
-  --artifact-root ./audio/generated/stability \
+  --artifact-root ./provider-raw/stability/heavy-slash \
   --allow-paid \
   --request-id heavy-slash \
-  --intent "short stylized metallic sword slash, strong transient, game SFX" \
-  --duration-ms 1000 \
-  --seed 42 \
+  --intent "short stylized metallic sword slash" \
+  --count 1 \
   --output ./provider-runs/heavy-slash.json \
-  --provenance-output ./provider-runs/heavy-slash-provenance.json
-```
+  --provenance-output ./provider-runs/heavy-slash-raw-provenance.json
 
-Then:
+mgal provider-normalize ./provider-runs/heavy-slash.json \
+  --output-root ./audio/canonical/generated/heavy-slash \
+  --output ./provider-runs/heavy-slash-normalized.json \
+  --provenance-output ./provider-runs/heavy-slash-normalized-provenance.json
 
-```bash
 mgal serve ./audio
 ```
 
-The generated WAV is immediately visible to the existing Browser Audition Board because it is already inside the served audio tree.
+Generating and normalizing are deliberately separate operations.
 
-## Short SFX requests
+That means a paid Provider call can be reused and re-normalized without spending additional generation credits.
 
-The Stable Audio API currently requires at least 1 second.
+## Mixed local + generated workflow
 
-Therefore:
-
-```text
-requested duration = 400 ms
-API duration       = 1.0 s
-```
-
-MGAL records both values in generation provenance:
-
-```text
-requested_duration_ms
-api_duration_seconds
-```
-
-This avoids pretending the provider honored a shorter duration than the API supports.
-
-## Seed behavior
-
-Stable Audio uses seed 0 as a random-seed request.
-
-MGAL preserves that behavior:
-
-```text
---seed 0 → API seed 0
-```
-
-For a non-zero numeric seed and multiple candidates, MGAL increments the seed per candidate.
-
-Arbitrary text seeds are deterministically converted into valid numeric API seeds.
-
-## Async HTTP behavior
-
-The adapter follows the API's asynchronous flow:
-
-```text
-POST text-to-audio
-      ↓
-202 + generation id
-      ↓
-GET /results/{id}
-      ↓
-202 while generating
-      ↓
-200 WAV bytes
-```
-
-Polling has configurable safety bounds:
-
-```text
---poll-interval
---max-wait
-```
-
-CI tests this request/poll sequence with a fake HTTP transport. CI does not contact Stability AI and does not spend credits.
-
-## Generated provenance
-
-Every returned candidate immediately carries M0.8-compatible provenance.
-
-Example fields:
-
-```text
-source_type = generated
-
-generation.provider = stability-audio
-generation.model = stable-audio-3
-generation.prompt
-generation.seed
-generation.parameters.generation_id
-generation.parameters.requested_duration_ms
-generation.parameters.api_duration_seconds
-generation.parameters.steps
-generation.parameters.cfg_scale
-generation.parameters.endpoint
-
-license.status = terms
-license.expression = Stability AI Terms of Service
-license.url = official terms URL
-```
-
-API credentials are never persisted.
-
-MGAL records the provider's terms declaration. It does not independently make a legal determination for a particular release.
-
-## Merge generated and local provenance
-
-A mixed game SFX may use both local and generated layers.
-
-M1.1 adds:
+Local assets can go through the same boundary.
 
 ```bash
+mgal source-provide \
+  --provider local \
+  --audio-root ./raw-local \
+  --provenance-ledger ./local-provenance.json \
+  --request-id metal \
+  --intent "metal" \
+  --count 1 \
+  --output ./provider-runs/metal.json
+
+mgal provider-normalize ./provider-runs/metal.json \
+  --output-root ./audio/canonical/local \
+  --output ./provider-runs/metal-normalized.json \
+  --provenance-output ./provider-runs/metal-normalized-provenance.json
+
 mgal provenance-merge \
-  ./local-provenance.json \
-  ./provider-runs/heavy-slash-provenance.json \
+  ./provider-runs/metal-normalized-provenance.json \
+  ./provider-runs/heavy-slash-normalized-provenance.json \
   --output ./combined-provenance.json
 ```
 
-Merge identity is `source_id = sha256:<hash>`.
+Now both sources share one renderer-safe format.
 
-Rules:
+## Determinism
 
-- unique sources are combined
-- identical duplicate entries are accepted
-- a complete entry replaces an unknown/incomplete duplicate
-- conflicting complete entries are rejected instead of guessed
+Normalization is deterministic for the same Provider artifact and profile.
 
-That combined Ledger can flow directly into strict Evidence:
+CI verifies that repeated normalization produces the same normalized SHA-256.
 
-```bash
-mgal bundle candidates.json \
-  --audio-root ./audio \
-  --provenance-ledger ./combined-provenance.json \
-  --require-provenance \
-  --output ./evidence/session-001
-```
+Provider originals are also re-hashed before normalization through Source Provider Contract validation.
 
-## End-to-end generated-audio flow
+## Integration proof
+
+CI includes an end-to-end fixture with intentionally incompatible inputs:
 
 ```text
-Prompt
-  ↓
-Stable Audio 3
-  ↓
-WAV + generation provenance
-  ↓
-Browser Audition Board
-  ↓
-Layer with local sounds
-  ↓
-A/B/C comparison
-  ↓
-Human select
-  ↓
-Merged Provenance Ledger
-  ↓
-Strict Evidence Bundle
-  ↓
-Replay / Relink
-  ↓
-Release / Attribution Pack
+local source:      8kHz mono PCM16
+generated source: 48kHz stereo PCM16
+         ↓
+normalize both
+         ↓
+44.1kHz mono PCM16
+         ↓
+mixed selected Recipe
+         ↓
+strict Evidence Bundle
+         ↓
+output.wav = 44.1kHz mono PCM16
 ```
 
-A CI integration fixture proves the generated candidate can be mixed with a local WAV and reach a strict Evidence Bundle.
+No network or paid generation is used in CI.
 
-## M1.0 Provider foundation
+## Provider foundation remains stable
 
-The common Provider contract remains version 1.0.
+Source Provider Contract stays at version 1.0.
 
-Every SourceCandidate still contains:
+M1.2 is a transformation layer after acquisition, not a Provider-specific exception.
 
 ```text
-candidate_id
-provider_id
-provider_kind
-relative_path
-source_id
-sha256
-bytes
-duration_ms
-sample_rate
-channels
-sample_width
-frames
-provenance
+Provider
+   ↓
+ProviderResult raw
+   ↓
+Normalizer
+   ↓
+ProviderResult canonical
+   ↓
+MGAL creative loop
 ```
-
-The Provider may acquire audio, but it may not select the winner, mutate a Recipe/Candidate Board, create Evidence, bypass provenance, or release audio directly.
-
-## Live-smoke status
-
-M1.1 implements the real HTTP adapter and validates its request/polling contract with mocked HTTP responses.
-
-This milestone does **not** perform a paid live generation during CI or repository construction. A live smoke requires the operator's own Stability API key and explicit `--allow-paid`.
 
 ## Current constraints
 
-- Stable Audio adapter currently targets `stable-audio-3`
-- text-to-audio only
-- WAV output only
-- no audio-to-audio or inpainting yet
-- no automatic trimming of the API's 1-second minimum
-- generated Stable Audio WAVs may have channel/sample-rate characteristics that differ from older local MGAL fixtures
-- Browser audition can handle generated WAVs, but deterministic offline rendering still requires layer formats compatible with the current renderer
-- no provider registry/plugin discovery yet
-- no automatic prompt compiler yet
-- no live paid API call in CI
+- canonical profile is fixed at 44.1kHz mono PCM16
+- PCM WAV input only
+- no FLAC/OGG/MP3 decode yet
+- channel conversion is arithmetic averaging
+- resampling uses deterministic linear interpolation, not studio-grade SRC
+- no loudness normalization yet
+- raw Provider artifacts are not embedded into Evidence, but their hashes remain in lineage
+- normalizer outputs are separate files and do not overwrite originals
 
 ## Design principle
 
-> Generation is an upstream candidate source, not the creative authority.
+> Provider bytes are historical evidence. Canonical bytes are creative working material.
 
-The generated sound enters the exact same human selection, evidence, provenance, replay, and release machinery as every other source.
+M1.2 lets MGAL mix heterogeneous sources while preserving exactly where every normalized sound came from.
