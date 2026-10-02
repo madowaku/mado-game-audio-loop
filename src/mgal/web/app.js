@@ -19,6 +19,8 @@ const state = {
   preferenceReplay: null,
   preferenceReplayPairIndex: 0,
   decisionMemory: null,
+  decisionContext: null,
+  decisionContextStale: false,
 };
 
 const list = document.querySelector("#audio-list");
@@ -88,6 +90,14 @@ const decisionMemorySummary = document.querySelector("#decision-memory-summary")
 const decisionMemoryEmpty = document.querySelector("#decision-memory-empty");
 const decisionMemoryList = document.querySelector("#decision-memory-list");
 const refreshDecisionMemoryButton = document.querySelector("#refresh-decision-memory");
+const loadDecisionContextButton = document.querySelector("#load-decision-context");
+const downloadDecisionContextButton = document.querySelector("#download-decision-context");
+const decisionContextPanel = document.querySelector("#decision-context-panel");
+const decisionContextCount = document.querySelector("#decision-context-count");
+const decisionContextSummary = document.querySelector("#decision-context-summary");
+const decisionContextStale = document.querySelector("#decision-context-stale");
+const decisionContextEmpty = document.querySelector("#decision-context-empty");
+const decisionContextList = document.querySelector("#decision-context-list");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -1446,6 +1456,160 @@ function renderPreferenceArchive() {
   });
 }
 
+function normalizeIntentForContext(value) {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function renderDecisionContext() {
+  const pack = state.decisionContext;
+  decisionContextList.replaceChildren();
+
+  if (!pack) {
+    decisionContextPanel.hidden = true;
+    downloadDecisionContextButton.disabled = true;
+    return;
+  }
+
+  decisionContextPanel.hidden = false;
+  decisionContextStale.hidden = !state.decisionContextStale;
+  downloadDecisionContextButton.disabled =
+    state.decisionContextStale;
+
+  const observations = Array.isArray(pack.observations)
+    ? pack.observations
+    : [];
+  decisionContextCount.textContent =
+    String(observations.length);
+  decisionContextEmpty.hidden =
+    observations.length > 0;
+
+  decisionContextSummary.textContent =
+    String(pack.returned_entry_count) +
+    " of " +
+    String(pack.matched_entry_count) +
+    " matching observation" +
+    (pack.matched_entry_count === 1 ? "" : "s") +
+    " · " +
+    pack.retrieval_strategy +
+    (pack.truncated ? " · truncated" : "");
+
+  observations.forEach(function (entry) {
+    const row = document.createElement("article");
+    row.className = "decision-context-row";
+
+    const title = document.createElement("strong");
+    title.textContent =
+      entry.winner_candidate_id +
+      " preferred over " +
+      entry.loser_candidate_id;
+
+    const source = document.createElement("span");
+    source.textContent =
+      entry.archive_id +
+      " · " +
+      entry.source_intent;
+
+    const match = document.createElement("span");
+    match.className = "decision-context-match";
+    const matchedTerms =
+      entry.match && Array.isArray(entry.match.matched_terms)
+        ? entry.match.matched_terms
+        : [];
+    match.textContent =
+      (entry.match && entry.match.exact_intent
+        ? "exact intent"
+        : "matched " + matchedTerms.join(", ")) +
+      " · " +
+      String(entry.match ? entry.match.match_count : 0) +
+      " term" +
+      ((entry.match && entry.match.match_count) === 1 ? "" : "s");
+
+    const differences =
+      entry.observed_differences || {};
+    const delta = document.createElement("span");
+    delta.className = "decision-context-delta";
+    delta.textContent =
+      "observed Δ layers " +
+      formatSignedNumber(differences.layer_count_delta) +
+      " · gain " +
+      formatSignedNumber(differences.total_gain_delta) +
+      " · earliest offset " +
+      formatSignedNumber(differences.earliest_offset_ms_delta) +
+      "ms · fade " +
+      formatSignedNumber(differences.fade_out_ms_delta) +
+      "ms";
+
+    row.append(title, source, match, delta);
+    decisionContextList.appendChild(row);
+  });
+}
+
+async function loadDecisionContext() {
+  const intentValue =
+    intent.value.trim() || "game sound effect";
+  loadDecisionContextButton.disabled = true;
+  loadDecisionContextButton.textContent = "Loading…";
+
+  try {
+    const response = await fetch(
+      "/api/decision-context?intent=" +
+      encodeURIComponent(intentValue) +
+      "&limit=6",
+      {
+        cache: "no-store",
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not retrieve Decision Context"
+      );
+    }
+
+    state.decisionContext = result;
+    state.decisionContextStale = false;
+    renderDecisionContext();
+    status.textContent =
+      "Decision Context loaded · " +
+      String(result.returned_entry_count) +
+      " observation" +
+      (result.returned_entry_count === 1 ? "" : "s");
+  } catch (error) {
+    status.textContent =
+      "Decision Context failed: " + error.message;
+  } finally {
+    loadDecisionContextButton.disabled = false;
+    loadDecisionContextButton.textContent =
+      "Load memory context";
+  }
+}
+
+function markDecisionContextStale() {
+  const pack = state.decisionContext;
+  if (!pack || !pack.query) return;
+
+  const current = normalizeIntentForContext(
+    intent.value
+  );
+  state.decisionContextStale =
+    current !== pack.query.normalized_intent;
+  renderDecisionContext();
+}
+
+function downloadDecisionContext() {
+  const pack = state.decisionContext;
+  if (!pack || state.decisionContextStale) return;
+
+  const filename =
+    escapeRecipeId(pack.query.intent) +
+    "-decision-context.json";
+  downloadJson(pack, filename);
+}
+
 function formatSignedNumber(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "?";
@@ -2123,6 +2287,9 @@ refreshPreferenceArchiveButton.addEventListener("click", function () {
 refreshDecisionMemoryButton.addEventListener("click", function () {
   refreshDecisionMemory({ quiet: false });
 });
+loadDecisionContextButton.addEventListener("click", loadDecisionContext);
+downloadDecisionContextButton.addEventListener("click", downloadDecisionContext);
+intent.addEventListener("input", markDecisionContextStale);
 preferenceReplayPrev.addEventListener("click", function () {
   if (!state.preferenceReplay) return;
   state.preferenceReplayPairIndex = Math.max(
