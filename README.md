@@ -2,312 +2,352 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → blind preference → archive → recover → replay → decide → evidence → release**
+**provide → intake → blind preference → archive → recover → promote → decision memory → evidence → release**
 
-## Current milestone: M1.9 Preference Source Recovery / Portable Archive
+## Current milestone: M2.0 Preference Archive Promotion / Decision Memory
 
-M1.9 makes Preference history survive renamed and reorganized source libraries. Historical Recipe paths remain immutable; a separate SHA-256 Relink Map resolves where the same bytes live now.
+M2.0 turns selected Preference Archives into reusable decision evidence.
 
-The workspace now carries:
+The boundary is deliberate:
+
+```text
+Preference Archive
+= what happened in one blind listening session
+
+Decision Memory
+= only the sessions the creator explicitly chose to keep as reusable observations
+```
+
+Decision Memory does **not** choose the next Candidate.
+
+It records observed pairwise choices so future tools can retrieve context without converting past taste into an automatic rule.
+
+## Explicit promotion
+
+Every Preference Archive remains ordinary history until the creator explicitly promotes it:
+
+```bash
+mgal decision-promote heavy-slash-review \
+  --audio-root ./audio
+```
+
+Browser archives expose:
+
+```text
+[ Promote memory ]
+```
+
+After promotion:
+
+```text
+[ In memory ]
+```
+
+Promotion is independent from source recovery.
+
+A structurally valid Preference Archive may be promoted even if its WAV files have moved and the archive is currently marked `recoverable`.
+
+That is intentional:
+
+```text
+source availability
+!=
+historical decision validity
+```
+
+## Workspace storage
+
+Decision Memory is stored at:
 
 ```text
 audio/
 └── .mgal/
-    ├── provenance-ledger.json
-    ├── intakes/
-    └── preferences/
-        └── <archive-id>/
-            ├── manifest.json
-            └── evidence.json
+    ├── decision-memory.json
+    ├── preferences/
+    └── preference-relinks/
 ```
 
-## Source recovery
-
-If archived paths moved:
-
-```bash
-mgal preference-recover heavy-slash-review \
-  --audio-root ./audio \
-  --search-root ./audio
-```
-
-MGAL tries the historical path first, then scans same-size WAV files and hashes them. One exact SHA-256 match becomes `relinked`; multiple matches are `ambiguous`; no match is `missing`. MGAL never guesses.
-
-Default maps live at:
+Schema:
 
 ```text
-audio/.mgal/preference-relinks/<archive-id>.json
+decision_memory_version = 0.1
+promotion_count
+entry_count
+promotions[]
+entries[]
 ```
 
-The map is bound to the archive ID, Preference Evidence SHA-256, and Candidate Board SHA-256. Replay revalidates target size and hash every time.
+## Promotion records
 
-Portable replay can use a separate current source library:
-
-```bash
-mgal preference-replay-archive heavy-slash-review \
-  --audio-root ./workspace \
-  --search-root /mnt/current-sfx \
-  --relink-map ./heavy-slash-relink.json
-```
-
-The archive keeps its historical paths. Only the returned replay plan rewrites Recipe layer sources in memory to current resolved paths, preserving gain and offset.
-
-The Browser archive shelf now distinguishes `direct`, `relinked`, and `recoverable`. Recoverable sessions expose **Recover sources**, which scans the served audio root and restores Replay only when every source resolves uniquely.
-
-## Archive a completed Preference Session
-
-After Reveal, the Browser action is:
+One promotion records the archived session identity:
 
 ```text
-Archive + download
-```
-
-The Browser sends the session to:
-
-```text
-POST /api/preference-archive
-```
-
-The server:
-
-1. compiles Preference Evidence 0.1
-2. validates Candidate Board, mapping, pairs, votes and winner/tie
-3. fingerprints every compared source WAV
-4. verifies replay against the current workspace
-5. writes a content-addressed archive session
-6. returns the same Evidence for download
-
-The older compile-only endpoint remains available:
-
-```text
-POST /api/preference-evidence
-```
-
-## Content-addressed archive identity
-
-If no explicit archive ID is supplied, MGAL derives one from:
-
-```text
-<base-recipe-id>-<preference-evidence-sha256-prefix>
-```
-
-The hash is computed from canonical JSON.
-
-Consequences:
-
-- saving the exact same Evidence again reuses the same archive
-- the same explicit archive ID cannot silently point to different Evidence
-- applying a winner changes the Board snapshot and therefore creates a distinct archive from the pre-Apply session
-
-## Archive manifest
-
-Each session has a small manifest:
-
-```text
-preference_archive_version = 0.1
 archive_id
-evidence_sha256
+archive_evidence_sha256
 candidate_board_sha256
-candidate_count
+intent
 pair_count
-source_count
 winner_candidate_id
 tie
 applied_candidate_id
+entry_ids[]
 ```
 
-The archive stores the full Preference Evidence separately as `evidence.json`.
+The canonical Preference Evidence SHA-256 is the promotion identity.
 
-Archive verification also rechecks all current source WAV hashes.
+Promoting identical Evidence twice is idempotent.
 
-## CLI archive workflow
+Even if the same Evidence exists under another archive name, it is not counted twice.
 
-Archive an exported session:
+## Pairwise Decision Memory entries
 
-```bash
-mgal preference-archive ./preference-evidence.json \
-  --audio-root ./audio
-```
+M2.0 intentionally does not collapse a session into a single taste score.
 
-Optionally choose a stable name:
-
-```bash
-mgal preference-archive ./preference-evidence.json \
-  --audio-root ./audio \
-  --archive-id heavy-slash-review
-```
-
-List sessions:
-
-```bash
-mgal preference-list --audio-root ./audio
-```
-
-Replay one archived session:
-
-```bash
-mgal preference-replay-archive heavy-slash-review \
-  --audio-root ./audio \
-  --output ./replay-plan.json
-```
-
-## Preference Archive UI
-
-The Browser now contains a local archive shelf:
-
-```text
-PREFERENCE ARCHIVE
-
-heavy-slash-7a21c4...
-3 pairs · 3 sources · winner candidate-b · applied candidate-b
-
-[ Replay ]
-```
-
-The list is loaded from:
-
-```text
-GET /api/preferences
-```
-
-A broken archive remains visible with an error state rather than silently disappearing.
-
-## Verified Replay
-
-Opening an archive calls:
-
-```text
-GET /api/preferences/<archive-id>/replay
-```
-
-The server verifies the archived Evidence and all source fingerprints before returning a replay plan.
-
-If a WAV changed, replay is rejected before playback.
-
-The Browser Replay panel then shows:
-
-```text
-VERIFIED REPLAY
-
-X = Candidate B
-Y = Candidate A
-Z = Candidate C
-
-Pair 1 / 3
-
-Y                 X
-Candidate A       Candidate B
-
-[ Play Y ]   vs   [ Play X ]
-
-Recorded preference: X · Candidate B
-
-[ Prev pair ] [ Next pair ]
-```
-
-## Exact Recipe replay
-
-M1.7 replay returned source paths.
-
-M1.8 additionally includes each side's embedded Candidate Recipe:
-
-```text
-left_recipe
-right_recipe
-```
-
-The Browser hydrates those Recipe layers through the current audio catalog.
-
-That preserves:
-
-- source path
-- layer gain
-- layer offset
-- multiple layers
-
-So a manually designed layered Candidate can be replayed with the same Recipe parameters used during the archived comparison.
-
-## Archive does not overwrite current work
-
-Preference Replay is a separate Browser surface.
-
-Opening an old session does not:
-
-- replace the current Candidate Board
-- change active Candidate decisions
-- change the current Recipe
-- Apply the archived winner
-- rerun randomization
-
-Replay is observational.
-
-It reconstructs the recorded experiment.
-
-## Invalid archive behavior
-
-The archive list verifies each session.
-
-If its Evidence is malformed or a referenced source WAV changed, the session is shown as invalid.
+A three-pair Preference Session becomes three observations.
 
 Example:
 
 ```text
-heavy-slash-review
-INVALID · preference replay source hash changed: incoming/...wav
+pair 1
+Candidate B preferred over Candidate A
+
+pair 2
+Candidate C preferred over Candidate A
+
+pair 3
+Candidate B preferred over Candidate C
 ```
 
-The Replay button is not offered for invalid sessions.
-
-## API surface
+Each entry records:
 
 ```text
-POST /api/preference-evidence
-  compile only
-
-POST /api/preference-archive
-  compile + validate + archive
-
-GET /api/preferences
-  list/verify archives
-
-GET /api/preferences/<archive-id>/replay
-  verify sources + return exact replay plan
+entry_id
+archive_id
+archive_evidence_sha256
+candidate_board_sha256
+intent
+pair_index
+winner_alias
+winner_candidate_id
+loser_candidate_id
+winner_recipe
+loser_recipe
+observed_differences
 ```
 
-## Relationship to main Evidence Bundle
+## Recipe summaries
 
-Preference Archive and final Evidence Bundle have different roles.
+Winner and loser Recipes are converted into relocatable summaries.
+
+Each summary records:
 
 ```text
-.mgal/preferences/
-= reusable local decision history
-
-Evidence Bundle
-= frozen release/decision evidence
+recipe_id
+recipe_sha256
+layer_count
+total_gain
+earliest_offset_ms
+latest_offset_ms
+normalize
+fade_out_ms
+source_ids[]
 ```
 
-A Preference Evidence artifact can still be attached to the normal Bundle with:
+Source identity is content-addressed:
+
+```text
+sha256:<source-hash>
+```
+
+Filesystem paths are not used as Decision Memory identity.
+
+## Observed differences
+
+M2.0 derives deterministic pair differences:
+
+```text
+layer_count_delta
+total_gain_delta
+earliest_offset_ms_delta
+latest_offset_ms_delta
+fade_out_ms_delta
+normalize_changed
+shared_source_count
+winner_only_source_count
+loser_only_source_count
+```
+
+For example:
+
+```text
+Candidate B preferred over Candidate A
+
+observed:
+Δ layers           0
+Δ total gain      +0.30
+Δ earliest offset +25 ms
+Δ fade              0 ms
+```
+
+These are observations about one comparison.
+
+They are **not** converted into claims such as:
+
+```text
+"always use more gain"
+"Candidate B style is better"
+"auto-select this Recipe next time"
+```
+
+## Decision Memory UI
+
+The Browser now includes:
+
+```text
+DECISION MEMORY
+
+2 promoted sessions · 6 pairwise observations
+
+Candidate B preferred over Candidate A
+heavy-slash-review · pair 1 · crisp sword impact
+observed Δ layers 0 · gain +0.3 · earliest offset +25ms
+```
+
+The UI currently shows the most recent observations.
+
+It is a review surface, not an automatic recommender.
+
+## API
+
+```text
+GET  /api/decision-memory
+POST /api/preferences/<archive-id>/promote
+```
+
+The Preference Archive list is also enriched with:
+
+```text
+promotable
+promoted
+```
+
+A recoverable archive can still be promotable.
+
+A structurally corrupted archive cannot.
+
+## CLI
+
+Promote one archive:
 
 ```bash
-mgal bundle candidate-board.json \
-  --audio-root ./audio \
-  --preference-evidence ./preference-evidence.json \
-  --output ./evidence/session-001
+mgal decision-promote heavy-slash-review \
+  --audio-root ./audio
 ```
+
+Inspect the full memory:
+
+```bash
+mgal decision-memory \
+  --audio-root ./audio
+```
+
+Verify derived memory against the source Preference Archives:
+
+```bash
+mgal decision-memory-verify \
+  --audio-root ./audio
+```
+
+Verification recompiles every promoted archive into its expected pairwise observations and requires exact entry equality.
+
+This catches manual changes to:
+
+- winner/loser identity
+- Recipe summary
+- Recipe fingerprint
+- source fingerprints
+- observed deltas
+- promotion entry references
+
+## Multi-session accumulation
+
+Decision Memory accumulates multiple explicit promotions.
+
+```text
+Archive 001
+  3 pair observations
+       +
+Archive 002
+  3 pair observations
+       =
+Decision Memory
+  2 promoted sessions
+  6 observations
+```
+
+The summary also groups promotion counts by intent.
+
+This is retrieval context, not a statistical quality ranking.
+
+## Human-control boundary
+
+M2.0 intentionally does not create:
+
+```text
+recommended_candidate
+auto_select
+preference_score
+automatic Candidate ranking
+automatic Apply winner
+```
+
+The flow remains:
+
+```text
+past blind session
+      ↓
+human chooses Promote
+      ↓
+Decision Memory observation
+      ↓
+future creator may inspect it
+      ↓
+new Candidate decision still belongs to the creator
+```
+
+## Relationship to Preference Archive
+
+```text
+Preference Archive
+immutable session evidence
+
+Preference Relink Map
+current filesystem address book
+
+Decision Memory
+mutable collection of explicitly promoted observations
+```
+
+Source recovery and Decision Memory are orthogonal.
+
+Moving files does not erase promoted decision evidence.
+
+Promoting a session does not alter the archive, Candidate Board, Recipe, or source Relink Map.
 
 ## Current constraints
 
-- archive is local JSON, not a database
-- list operation verifies source hashes and may become heavier with very large archives
-- archive deletion/pruning UI is not implemented
-- archive tags/notes are not implemented
-- Browser Replay does not auto-play the entire pair sequence
-- Browser recovery searches the served audio root; CLI may use a separate `--search-root`
-- duplicate byte-identical matches remain ambiguous until a future manual-resolution UI
-- archive has no wall-clock timestamp by design; identity is content-based
+- Decision Memory is a local JSON artifact, not a database
+- promotion is additive; demotion/removal UI is not implemented yet
+- UI shows recent observations rather than full search/filter tooling
+- observed Recipe features are intentionally small and deterministic
+- no embedding/vector retrieval yet
+- no inferred preference model
+- no automatic Candidate recommendation
+- no automatic Candidate selection
+- Decision Memory is not cryptographically signed
 
 ## Design principle
 
-> Move the files, not the history.
+> Preserve what the creator chose to remember without turning memory into authority.
 
-M1.9 makes Preference Archives portable across renamed folders and reorganized source libraries without rewriting historical Evidence.
+M2.0 gives MGAL durable decision context while keeping new creative decisions explicitly human.
