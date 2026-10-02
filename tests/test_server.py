@@ -98,5 +98,7 @@ def test_server_exposes_preference_archive_replay_contract():
     assert 'parsed.path.startswith("/api/preferences/")' in source
     assert 'parsed.path.endswith("/replay")' in source
     assert "archive_preference_evidence" in source
-    assert "list_preference_archives" in source
-    assert "replay_preference_archive" in source
+    assert "list_portable_preference_archives" in source
+    assert "replay_preference_archive_portable" in source
+    assert "write_preference_relink_map" in source
+    assert 'parsed.path.endswith("/recover")' in source
