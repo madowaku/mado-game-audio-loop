@@ -2,383 +2,339 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**listen → compare → remember → inspect → hypothesize → vary deliberately**
+**listen → remember → inspect → hypothesize → plan → materialize later**
 
-## Current milestone: M2.3 Human Hypothesis / Variation Brief
+## Current milestone: M2.4 Variation Brief → Candidate Plan Compiler
 
-M2.3 introduces the boundary between observation and the next experiment.
+M2.4 converts a human-authored M2.3 Variation Brief into a deterministic experiment plan.
 
-M2.2 can show:
+It still does **not** generate or mutate Recipes.
 
-```text
-Current Recipe
-vs
-Past winner
-vs
-Past loser
-```
-
-M2.3 does not decide what to do with those differences.
-
-Instead, the creator explicitly writes a hypothesis:
+The flow is:
 
 ```text
-Observation
-    ↓
-Human hypothesis
-    ↓
 Variation Brief
-    ↓
-future experiment
+      ↓
+Candidate Plan
+
+A = Control
+B = Hypothesis
+C = Contrast
 ```
 
-No Recipe is generated or mutated at this milestone.
+The plan answers:
 
-## Variation Brief 0.1
+> Which three experimental roles should we prepare next?
 
-A Variation Brief contains:
+It does not yet answer:
+
+> What exact Recipe JSON should each role use?
+
+That is intentionally reserved for a later materialization milestone.
+
+## Candidate Plan 0.1
+
+Top-level fields:
 
 ```text
-variation_brief_version = 0.1
-brief_id
-
+candidate_plan_version = 0.1
+plan_id
+variation_brief_id
 basis
-  delta_inspector_id
-  context_pack_id
-  decision_memory_sha256
-  query
-  current_recipe
-  reference
-
-human_input
-  authorship = human_explicit
-  hypothesis
-  listening_for
-  planned_change
-  preserve[]
-
+experiment
+variants[]
+unresolved_slots[]
+ready_for_materialization
 authority
 ```
 
 Authority is fixed to:
 
-```json
-{
-  "recipe_mutation": "none",
-  "candidate_selection": "none",
-  "candidate_generation": "none"
-}
+```text
+recipe_materialization = none
+candidate_generation = none
+candidate_selection = none
 ```
 
-The Brief is an experiment plan, not an executable mutation.
+## A / B / C roles
 
-## Human authorship
+### A · Control
 
-MGAL does not infer or auto-write the hypothesis from Delta Inspector values.
+A preserves the current Recipe conceptually.
 
-The creator must supply:
+```text
+slot       A
+role       control
+resolution resolved
+change     null
+derivation preserve_current_recipe
+```
 
-- a non-empty hypothesis
-- a non-empty listening target
-- one planned change
-- optional conditions to preserve
-- optional Inspector reference
+M2.4 does not embed a generated control Recipe.
+
+### B · Hypothesis
+
+B carries the exact human-authored planned change from the Variation Brief.
+
+```text
+slot       B
+role       hypothesis
+resolution resolved
+derivation human_variation_brief
+change     <exact planned_change>
+hypothesis <exact human hypothesis>
+```
+
+The compiler does not rewrite the human hypothesis.
+
+### C · Contrast
+
+C is only auto-resolved when the planned action has an unambiguous mechanical inverse:
+
+```text
+increase ↔ decrease
+add      ↔ remove
+```
+
+The amount and unit are preserved.
 
 Example:
 
 ```text
-Hypothesis:
-Reducing gain may leave more room for the transient.
+Brief:
+gain decrease 0.10 ratio
 
-Listen for:
-A clearer attack without losing metallic weight.
-
-Planned change:
-gain
-decrease
-0.10 ratio
-
-Preserve:
-source set
-layer count
+C:
+gain increase 0.10 ratio
 ```
 
-## Planned change contract
-
-Supported dimensions:
+The derivation is recorded as:
 
 ```text
-layers
-gain
-offset
-fade
-normalize
-sources
-other
+deterministic_inverse_v1
 ```
 
-Supported actions:
+## Manual contrast boundary
+
+Actions such as:
 
 ```text
-increase
-decrease
 hold
-add
-remove
 replace
 toggle
 custom
 ```
 
-Optional amount/unit validation includes:
+do not have one universally correct experimental opposite.
+
+MGAL does not invent one.
+
+Instead:
 
 ```text
-gain   → ratio
-offset → ms
-fade   → ms
-layers → count
+C
+role       contrast
+resolution manual_required
+change     null
 ```
 
-This records intended experimental direction only.
-
-M2.3 does not apply the change.
-
-## Inspector reference
-
-A Brief may be general:
+and:
 
 ```text
-reference = null
+ready_for_materialization = false
+unresolved_slots = ["C"]
 ```
 
-or explicitly point to one comparison in the current Delta Inspector:
+This lets the plan expose uncertainty before Recipe generation begins.
+
+## Experiment snapshot
+
+The Plan carries:
 
 ```text
-entry_id
-role = past_winner | past_loser
+hypothesis
+listening_for
+planned_change
+preserve[]
 ```
 
-When a reference is selected, the Brief freezes:
+The B variant must exactly equal this planned change.
 
-- archive ID
-- source intent
-- pair index
-- candidate ID
-- referenced Recipe summary
-- Current-minus-reference delta
+The C variant is recomputed from it during validation.
 
-The reference must exist inside the supplied Inspector Pack.
-
-A fabricated entry ID is rejected.
-
-## Historical behavior
-
-Delta Inspector is a live observation surface and may become stale as Current Recipe or Context changes.
-
-Variation Brief has a different role.
-
-Once saved, it records:
-
-> At this exact observation point, this is what the creator wanted to try next.
-
-Therefore a saved Brief does not become invalid merely because the current Recipe later changes.
-
-Its content-derived ID binds it to the historical basis and human input.
+That means a hand-edited Plan cannot silently alter B or C semantics even if its content hash is recomputed.
 
 ## Content-addressed storage
 
-Briefs are stored at:
+Plans are stored at:
 
 ```text
 audio/
 └── .mgal/
-    └── variation-briefs/
-        └── <brief-hash>.json
+    └── candidate-plans/
+        └── <plan-hash>.json
 ```
 
-ID form:
+Plan ID:
 
 ```text
-brief:<canonical payload SHA-256 prefix>
+plan:<canonical payload SHA-256 prefix>
 ```
 
-Saving identical content again is idempotent.
-
-The same Brief is reused rather than duplicated.
-
-## Browser workflow
-
-After a fresh M2.2 Delta Inspector exists, the Browser enables:
-
-```text
-HUMAN HYPOTHESIS
-Variation Brief
-```
-
-The creator can choose:
-
-- General current Recipe
-- one past winner
-- one past loser
-
-and enter:
-
-```text
-Hypothesis
-Listen for
-Dimension
-Action
-Amount
-Unit
-Change note
-Preserve
-```
-
-Then:
-
-```text
-[ Save Variation Brief ]
-```
-
-The Browser sends:
-
-```text
-POST /api/variation-briefs
-```
-
-with the current Inspector and explicit human input.
-
-The Browser independently rejects a response unless:
-
-```text
-human_input.authorship == human_explicit
-recipe_mutation == none
-candidate_selection == none
-candidate_generation == none
-```
-
-## Saved Brief shelf
-
-The Browser loads:
-
-```text
-GET /api/variation-briefs
-```
-
-and shows stored hypotheses with their planned dimension/action and optional reference role.
-
-The list is historical. Saving a Brief does not change the current Recipe.
+Compiling the same Variation Brief again produces the same Plan and reuses the existing file.
 
 ## CLI
 
-Create a Brief from a saved Inspector Pack and a human-input JSON file:
+Compile:
 
 ```bash
-mgal variation-brief-create \
-  inspector.json \
-  human-input.json \
+mgal candidate-plan-compile \
+  brief.json \
   --audio-root ./audio \
-  --output brief.json
+  --output plan.json
 ```
 
-Example human-input file:
-
-```json
-{
-  "hypothesis": "Reducing gain may improve attack clarity.",
-  "listening_for": "A sharper transient without losing body.",
-  "planned_change": {
-    "dimension": "gain",
-    "action": "decrease",
-    "amount": 0.1,
-    "unit": "ratio",
-    "note": "Change gain only."
-  },
-  "preserve": [
-    "source set",
-    "layer count"
-  ],
-  "reference": {
-    "entry_id": "decision:...",
-    "role": "past_winner"
-  }
-}
-```
-
-List workspace Briefs:
+List:
 
 ```bash
-mgal variation-brief-list \
+mgal candidate-plan-list \
   --audio-root ./audio
 ```
 
-Validate a Brief:
+Validate:
 
 ```bash
-mgal variation-brief-validate   brief.json
+mgal candidate-plan-validate \
+  plan.json
 ```
+
+## Browser workflow
+
+Saved Variation Brief cards now expose:
+
+```text
+[ Compile plan ]
+```
+
+After compilation:
+
+```text
+[ Plan ready ]
+```
+
+or, when C cannot be derived safely:
+
+```text
+[ Plan needs C input ]
+```
+
+The Candidate Plan shelf displays:
+
+```text
+A · control
+resolved · no change
+
+B · hypothesis
+resolved · gain decrease 0.1 ratio
+
+C · contrast
+resolved · gain increase 0.1 ratio
+```
+
+or an explicit:
+
+```text
+C · contrast
+manual_required · no change
+```
+
+No materialize/apply/select action exists in this milestone.
+
+## HTTP API
+
+```text
+GET  /api/candidate-plans
+POST /api/candidate-plans
+```
+
+POST accepts:
+
+```json
+{
+  "brief_id": "brief:..."
+}
+```
+
+The server loads the saved content-addressed Variation Brief, compiles the Plan, validates it, stores it, and returns the Plan plus storage result.
+
+## Standalone validation
+
+Candidate Plan validation checks:
+
+- exactly three variants
+- exact A-control / B-hypothesis / C-contrast order
+- planned-change dimension/action/unit contract
+- A has no change
+- B equals the human planned change exactly
+- C equals deterministic inverse when safe
+- C remains manual_required when inversion is unsafe
+- unresolved_slots matches unresolved variants
+- ready_for_materialization matches unresolved state
+- shared listening target is preserved
+- content-derived Plan ID is correct
+- no materialized Recipe or Candidate selection field exists
 
 ## Automatic-action prohibition
 
-Variation Brief validation rejects fields such as:
+Candidate Plans reject fields such as:
 
 ```text
 generated_recipe
+materialized_recipe
+selected_candidate_id
 recommended_candidate
-auto_select
 candidate_ranking
 preference_score
-similarity_score
+auto_select
 apply_winner
 ```
 
-M2.3 also intentionally has no:
+M2.4 therefore stops at a design document.
+
+## M2.0 → M2.4
 
 ```text
-Apply variation
-Generate Candidate
-Copy past winner
-Auto-edit Recipe
+M2.0 Decision Memory
+What did I choose before?
+
+M2.1 Context Pack
+Which past choices matter now?
+
+M2.2 Delta Inspector
+How is the current Recipe different?
+
+M2.3 Variation Brief
+What do I want to try next?
+
+M2.4 Candidate Plan
+What experimental roles should we prepare?
 ```
 
-Those would cross into a later execution milestone.
-
-## M2.0 → M2.3
-
-```text
-M2.0
-Decision Memory
-"What did I choose before?"
-
-M2.1
-Context Pack
-"Which past choices are relevant now?"
-
-M2.2
-Delta Inspector
-"How is the current Recipe different?"
-
-M2.3
-Variation Brief
-"What do I, the human, want to try next?"
-```
-
-This creates a clean seam between evidence and action.
+The next step can finally materialize those roles into real Recipes while retaining this audit trail.
 
 ## Current constraints
 
-- one planned change object per Brief
-- preserve conditions are human-authored text labels
-- no generated Candidate or Recipe
-- no automatic interpretation of Inspector deltas
-- no LLM-written hypothesis
-- no executable patch plan yet
-- no Brief status lifecycle such as planned/running/completed yet
-- Brief storage is local JSON
-- Briefs are content-addressed but not cryptographically signed
+- only three fixed slots: A/B/C
+- C auto-contrast supports increase/decrease/add/remove only
+- non-invertible C requires later human resolution
+- Plan does not include materialized Recipe JSON
+- Plan does not edit Candidate Board
+- Plan does not select or rank Candidates
+- no execution lifecycle yet
+- no automatic materialization from Plan
 
 ## Design principle
 
-> Observation can suggest a question. Only the creator turns it into an experiment.
+> Plan the experiment before changing the artifact.
 
-M2.3 gives that experiment a durable, explicit contract without handing execution authority to the system.
+M2.4 creates a clean seam between human intention and future Recipe generation.
