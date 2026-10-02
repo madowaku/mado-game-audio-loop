@@ -449,11 +449,42 @@ def verify_provenance_subset(
     if not isinstance(entries, list):
         raise ProvenanceLedgerError("provenance entries must be a list")
 
-    indexed_ids = {
-        source_id_for_hash(item["sha256"])
-        for item in source_index.get("sources", [])
-        if isinstance(item, dict) and isinstance(item.get("sha256"), str)
-    }
+    entry_count = provenance_data.get("entry_count")
+    if not isinstance(entry_count, int) or entry_count != len(entries):
+        raise ProvenanceLedgerError("provenance entry_count does not match entries")
+
+    source_items = source_index.get("sources", [])
+    if not isinstance(source_items, list):
+        raise ProvenanceLedgerError("source-index sources must be a list")
+
+    expected_source_count = provenance_data.get("expected_source_count")
+    if (
+        not isinstance(expected_source_count, int)
+        or expected_source_count != len(source_items)
+    ):
+        raise ProvenanceLedgerError(
+            "provenance expected_source_count does not match source-index"
+        )
+
+    missing_source_ids = provenance_data.get("missing_source_ids")
+    if missing_source_ids != []:
+        raise ProvenanceLedgerError("evidence provenance has missing source IDs")
+
+    indexed_ids: set[str] = set()
+    for item in source_items:
+        if not isinstance(item, dict):
+            raise ProvenanceLedgerError("source-index entry must be an object")
+        sha256 = item.get("sha256")
+        if not isinstance(sha256, str):
+            raise ProvenanceLedgerError("source-index sha256 must be a string")
+        expected_id = source_id_for_hash(sha256)
+        source_id = item.get("source_id")
+        if source_id is not None and source_id != expected_id:
+            raise ProvenanceLedgerError(
+                "source-index source_id does not match sha256"
+            )
+        indexed_ids.add(expected_id)
+
     ledger_ids = {
         entry.get("source_id")
         for entry in entries
@@ -471,10 +502,20 @@ def verify_provenance_subset(
         _validate_entry_shape(entry, index)
 
     complete = sum(1 for entry in entries if entry_is_complete(entry))
+    incomplete = len(entries) - complete
+    computed_complete = complete == len(entries)
+
+    if provenance_data.get("complete_entries") != complete:
+        raise ProvenanceLedgerError("complete_entries summary is inconsistent")
+    if provenance_data.get("incomplete_entries") != incomplete:
+        raise ProvenanceLedgerError("incomplete_entries summary is inconsistent")
+    if provenance_data.get("complete") is not computed_complete:
+        raise ProvenanceLedgerError("complete summary is inconsistent")
+
     return {
         "ok": True,
         "entries": len(entries),
         "complete_entries": complete,
-        "incomplete_entries": len(entries) - complete,
-        "complete": complete == len(entries),
+        "incomplete_entries": incomplete,
+        "complete": computed_complete,
     }
