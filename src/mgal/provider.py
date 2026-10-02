@@ -11,9 +11,11 @@ from array import array
 
 from .audio import read_wav_metadata
 from .provenance import (
+    ProvenanceLedgerError,
     load_provenance_ledger,
     source_id_for_hash,
     source_sha256,
+    validate_provenance_entry,
 )
 
 
@@ -259,6 +261,12 @@ def validate_provider_result(result: ProviderResult) -> None:
             raise SourceProviderError(
                 f"{candidate.candidate_id}: provenance sha256 mismatch"
             )
+        try:
+            validate_provenance_entry(provenance)
+        except ProvenanceLedgerError as exc:
+            raise SourceProviderError(
+                f"{candidate.candidate_id}: invalid provenance: {exc}"
+            ) from exc
 
 
 def provider_result_to_dict(result: ProviderResult) -> dict[str, Any]:
@@ -519,3 +527,41 @@ class FixtureGeneratedProvider:
         )
         validate_provider_result(result)
         return result
+
+
+def provider_result_provenance_ledger(
+    result: ProviderResult,
+) -> dict[str, Any]:
+    validate_provider_result(result)
+
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for candidate in result.candidates:
+        if candidate.source_id in seen:
+            continue
+        seen.add(candidate.source_id)
+        entries.append(candidate.provenance)
+
+    return {
+        "provenance_ledger_version": "0.1",
+        "entry_count": len(entries),
+        "entries": entries,
+    }
+
+
+def write_provider_provenance_ledger(
+    result: ProviderResult,
+    output_path: str | Path,
+) -> Path:
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(
+            provider_result_provenance_ledger(result),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return output
