@@ -360,6 +360,76 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
 }
 
 .candidate-section-head { margin-bottom: 10px; }
+
+.audition-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0 5px;
+}
+
+.audition-position {
+  margin-left: auto;
+  color: #cceb67;
+  font-size: .75rem;
+  font-weight: 800;
+}
+
+.audition-shortcuts {
+  margin: 6px 0 10px;
+  color: #70766b;
+  font-size: .68rem;
+  line-height: 1.45;
+}
+
+#blind-mode.active,
+#sequence-candidates.active {
+  color: #111210;
+  border-color: #cceb67;
+  background: #cceb67;
+}
+
+.blind-mode .blind-sensitive {
+  position: relative;
+  color: transparent !important;
+  text-shadow: none !important;
+  user-select: none;
+}
+
+.blind-mode .blind-sensitive::after {
+  content: "hidden for blind audition";
+  position: absolute;
+  left: 0;
+  color: #70766b;
+  font-size: .68rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.blind-mode .source-context.blind-sensitive {
+  min-height: 34px;
+}
+
+.blind-mode .source-context.blind-sensitive > * {
+  visibility: hidden;
+}
+
+.blind-mode .source-context.blind-sensitive::after {
+  top: 9px;
+  left: 10px;
+}
+
+.blind-mode .intake-session-meta {
+  filter: blur(5px);
+  user-select: none;
+}
+
+.blind-mode .intent input {
+  color: transparent;
+  text-shadow: none;
+}
+
 .candidate-board { display: grid; gap: 10px; margin: 12px 0; }
 
 .candidate-card {
@@ -454,4 +524,5 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   .meta { width: 100%; margin-left: 0; }
   .layer-control { grid-template-columns: 62px minmax(0, 1fr) 54px; }
   .candidate-card-head { align-items: stretch; flex-direction: column; }
+  .audition-position { width: 100%; margin-left: 0; }
 }
