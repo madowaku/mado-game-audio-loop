@@ -1358,7 +1358,8 @@ function renderPreferenceArchive() {
     const card = document.createElement("article");
     card.className =
       "preference-archive-card" +
-      (entry.ok === false ? " invalid" : "");
+      (entry.ok === false ? " invalid" : "") +
+      (entry.recoverable ? " recoverable" : "");
 
     const meta = document.createElement("div");
     meta.className = "preference-archive-meta";
