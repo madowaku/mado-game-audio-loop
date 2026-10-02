@@ -569,6 +569,14 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   border-color: #6f4141;
 }
 
+.preference-archive-card.invalid:has(.recovery-action) {
+  border-color: #8a7440;
+}
+
+.recovery-action {
+  flex: 0 0 auto;
+}
+
 .preference-archive-meta {
   display: grid;
   gap: 3px;
