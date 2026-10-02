@@ -119,6 +119,10 @@ def test_provenance_subset_requires_exact_fingerprint_set(tmp_path: Path):
     }
     subset = subset_ledger_for_source_index(ledger_path, source_index)
     subset["entries"] = []
+    subset["entry_count"] = 0
+    subset["complete_entries"] = 0
+    subset["incomplete_entries"] = 0
+    subset["complete"] = True
 
     with pytest.raises(ProvenanceLedgerError, match="do not match"):
         verify_provenance_subset(subset, source_index)
