@@ -1368,7 +1368,9 @@ function renderPreferenceArchive() {
 
     const detail = document.createElement("span");
     if (entry.ok === false) {
-      detail.textContent = entry.error || "Archive validation failed";
+      detail.textContent = entry.recoverable
+        ? "Sources unresolved · " + (entry.error || "recovery required")
+        : entry.error || "Archive validation failed";
     } else {
       const resultText = entry.tie
         ? "tie"
@@ -1381,7 +1383,10 @@ function renderPreferenceArchive() {
         resultText +
         (entry.applied_candidate_id
           ? " · applied " + entry.applied_candidate_id
-          : " · not applied");
+          : " · not applied") +
+        (entry.source_status === "relinked"
+          ? " · relinked"
+          : " · direct");
     }
 
     meta.append(title, detail);
@@ -1396,10 +1401,67 @@ function renderPreferenceArchive() {
         openPreferenceReplay(entry.archive_id, replay);
       });
       card.appendChild(replay);
+    } else if (entry.recoverable) {
+      const recover = document.createElement("button");
+      recover.type = "button";
+      recover.className = "secondary compact recovery-action";
+      recover.textContent = "Recover sources";
+      recover.addEventListener("click", function () {
+        recoverPreferenceArchive(entry.archive_id, recover);
+      });
+      card.appendChild(recover);
     }
 
     preferenceArchiveList.appendChild(card);
   });
+}
+
+async function recoverPreferenceArchive(archiveId, button) {
+  button.disabled = true;
+  button.textContent = "Scanning…";
+
+  try {
+    const response = await fetch(
+      "/api/preferences/" +
+      encodeURIComponent(archiveId) +
+      "/recover",
+      {
+        method: "POST",
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not recover preference sources"
+      );
+    }
+
+    const recovery = result.recovery;
+    await refreshCatalog({ quiet: true });
+    await refreshPreferenceArchive({ quiet: true });
+
+    if (result.ok) {
+      status.textContent =
+        "Preference sources recovered · " +
+        String(recovery.resolved_count) +
+        "/" +
+        String(recovery.source_count) +
+        " resolved";
+    } else {
+      status.textContent =
+        "Preference recovery incomplete · " +
+        String(recovery.ambiguous_count) +
+        " ambiguous · " +
+        String(recovery.missing_count) +
+        " missing";
+    }
+  } catch (error) {
+    status.textContent =
+      "Preference recovery failed: " + error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Recover sources";
+  }
 }
 
 async function refreshPreferenceArchive(options) {
@@ -1459,7 +1521,8 @@ async function openPreferenceReplay(archiveId, button) {
     status.textContent =
       "Preference replay verified · " +
       String(result.sources_verified) +
-      " sources";
+      " sources · " +
+      result.source_status;
   } catch (error) {
     status.textContent =
       "Preference replay failed: " + error.message;
@@ -1490,13 +1553,19 @@ function renderPreferenceReplay() {
   preferenceReplayPanel.hidden = false;
   preferenceReplayTitle.textContent =
     "Replay · " + replay.archive_id;
-  preferenceReplayResult.textContent = replay.tie
-    ? "Archived result: tie"
-    : "Archived winner: " +
-      replay.winner_candidate_id +
-      (replay.applied_candidate_id
-        ? " · applied " + replay.applied_candidate_id
-        : " · not applied");
+  const sourceStatus =
+    replay.source_status === "relinked"
+      ? " · sources relinked by SHA-256"
+      : " · original paths";
+  preferenceReplayResult.textContent = (
+    replay.tie
+      ? "Archived result: tie"
+      : "Archived winner: " +
+        replay.winner_candidate_id +
+        (replay.applied_candidate_id
+          ? " · applied " + replay.applied_candidate_id
+          : " · not applied")
+  ) + sourceStatus;
 
   preferenceReplayMapping.replaceChildren();
   replay.mapping.forEach(function (entry) {
