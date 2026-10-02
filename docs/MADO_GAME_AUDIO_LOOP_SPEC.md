@@ -2723,6 +2723,246 @@ usage.selection_effect == none
 - existing M2.0 Decision Memory remains unchanged
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M2.2 Current Recipe / Decision Context Delta Inspector
+
+Goal:
+
+**Compare the current Recipe with the winner and loser Recipe summaries in an M2.1 Context Pack using deterministic observation-only deltas, without similarity scoring, ranking, recommendation, or Recipe mutation.**
+
+#### Inputs
+
+```text
+audio_root
+Decision Context Pack 0.1
+current Recipe 0.1
+```
+
+The Context Pack must be structurally valid and fresh against current Decision Memory.
+
+The current Recipe must pass normal MGAL Recipe validation.
+
+Every current Recipe source must resolve safely beneath `audio_root`.
+
+#### Current Recipe summary
+
+The inspector hashes current source WAV bytes and builds:
+
+```text
+recipe_id
+recipe_sha256
+intent
+layer_count
+total_gain
+earliest_offset_ms
+latest_offset_ms
+normalize
+fade_out_ms
+source_ids[]
+```
+
+`source_ids` use `sha256:<hash>`.
+
+The original current Recipe document is embedded separately as `current_recipe_document`.
+
+#### Delta direction
+
+Every comparison is explicitly:
+
+```text
+current_minus_reference
+```
+
+For each Context observation MGAL creates both:
+
+```text
+current_vs_winner
+current_vs_loser
+```
+
+Each contains:
+
+```text
+reference_role
+reference_recipe
+delta
+```
+
+#### Delta fields
+
+```text
+direction
+layer_count_delta
+total_gain_delta
+earliest_offset_ms_delta
+latest_offset_ms_delta
+fade_out_ms_delta
+normalize_changed
+shared_source_count
+current_only_source_count
+reference_only_source_count
+```
+
+Source counts are based on exact content-addressed source IDs.
+
+No filename similarity is used.
+
+#### Delta Inspector Pack 0.1
+
+```text
+delta_inspector_version = 0.1
+delta_inspector_id
+context_pack_id
+decision_memory_sha256
+query
+current_recipe_document
+current_recipe
+inspection_count
+inspections[]
+usage
+```
+
+Each inspection preserves the Context order and records:
+
+```text
+entry_id
+archive_id
+source_intent
+pair_index
+winner_candidate_id
+loser_candidate_id
+past_observed_differences
+current_vs_winner
+current_vs_loser
+```
+
+#### Usage boundary
+
+Required:
+
+```text
+role = observation_only
+selection_effect = none
+mutation_effect = none
+```
+
+Validation rejects automatic-evaluation/action fields including:
+
+```text
+recommended_candidate
+auto_select
+preference_score
+candidate_ranking
+closer_to
+similarity_score
+apply_winner
+```
+
+#### CLI
+
+```bash
+mgal decision-context-inspect \
+  context.json \
+  current-recipe.json \
+  --audio-root ./audio \
+  [--output inspector.json]
+
+mgal decision-context-inspect-verify \
+  inspector.json \
+  --audio-root ./audio
+```
+
+#### Verification
+
+Inspector verification:
+
+1. validates Inspector structure and usage boundary
+2. validates embedded current Recipe document
+3. verifies Recipe document SHA-256 against current summary
+4. rebuilds deterministic Decision Context from current Decision Memory
+5. requires the Context Pack ID to match
+6. re-resolves current Recipe sources
+7. re-hashes current source bytes
+8. rebuilds current Recipe summary
+9. rebuilds every current-vs-winner/loser delta
+10. rebuilds the complete Inspector Pack and requires exact equality
+
+A change to current source bytes makes the saved Inspector stale even when Recipe JSON is unchanged.
+
+#### Server API
+
+```text
+POST /api/decision-context-inspect
+```
+
+Request:
+
+```text
+context_pack
+current_recipe
+```
+
+The server returns a validated Inspector Pack or a JSON error.
+
+#### Browser UI
+
+After a fresh Context Pack is loaded and the active Recipe has at least one layer, Browser enables:
+
+```text
+Inspect current deltas
+```
+
+The panel displays current summary plus neutral `Current − past winner` and `Current − past loser` blocks.
+
+The Browser independently requires:
+
+```text
+usage.role == observation_only
+usage.selection_effect == none
+usage.mutation_effect == none
+```
+
+The panel exposes no Candidate mutation actions.
+
+#### Browser staleness
+
+An existing Inspector becomes stale when:
+
+- Intent changes and therefore Context becomes stale
+- active Candidate/Recipe changes
+- layer set changes
+- layer gain changes
+- layer offset changes
+
+Stale Inspector download is disabled.
+
+Reinspection is explicit.
+
+#### M2.2 acceptance
+
+- current Recipe is summarized with deterministic Recipe SHA-256
+- current source identity uses actual WAV SHA-256
+- current source path escape is rejected
+- missing current source is rejected
+- every Context observation receives current-vs-winner and current-vs-loser comparisons
+- comparison direction is always current minus reference
+- layer/gain/offset/fade/normalize deltas are deterministic
+- source overlap reports shared/current-only/reference-only counts
+- Context observation order is preserved
+- no closeness or similarity score is produced
+- no Candidate recommendation/ranking/action field is produced
+- Inspector Pack has content-derived identity
+- saved Inspector can be verified against current Memory/Context/Recipe/source bytes
+- current source drift makes saved Inspector verification fail
+- CLI supports build and verify
+- server exposes observation-only inspection
+- Browser exposes explicit Inspect action
+- Browser displays winner/loser comparisons with neutral treatment
+- current Recipe or Context changes mark Inspector stale
+- stale Inspector download is disabled
+- Browser has no Inspector-driven Candidate mutation controls
+- existing M2.1 Context Pack remains unchanged
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
