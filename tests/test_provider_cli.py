@@ -3,6 +3,8 @@ from pathlib import Path
 
 from mgal.cli import main
 from mgal.provenance import validate_provenance_ledger
+from mgal.providers.stability import StabilityAudioError
+import pytest
 
 
 def test_source_provide_fixture_generated_cli(tmp_path: Path, capsys):
@@ -69,3 +71,50 @@ def test_provider_describe_local_cli(tmp_path: Path, capsys):
     assert payload["provider_id"] == "local-files"
     assert payload["provider_kind"] == "local_file"
     assert payload["capabilities"]["network"] is False
+
+
+def test_provider_describe_stability_needs_no_key_or_network(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.delenv("STABILITY_API_KEY", raising=False)
+
+    code = main(
+        [
+            "provider-describe",
+            "--provider",
+            "stability",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["provider_id"] == "stability-audio"
+    assert payload["capabilities"]["network"] is True
+    assert payload["capabilities"]["paid_generation"] is True
+    assert payload["capabilities"]["requires_explicit_paid_opt_in"] is True
+
+
+def test_stability_cli_refuses_paid_request_without_opt_in(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("STABILITY_API_KEY", "should-not-be-used")
+
+    with pytest.raises(StabilityAudioError, match="paid"):
+        main(
+            [
+                "source-provide",
+                "--provider",
+                "stability",
+                "--artifact-root",
+                str(tmp_path / "generated"),
+                "--request-id",
+                "impact",
+                "--intent",
+                "impact",
+            ]
+        )
+
+    assert not (tmp_path / "generated").exists()
