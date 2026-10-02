@@ -2963,6 +2963,283 @@ Reinspection is explicit.
 - existing M2.1 Context Pack remains unchanged
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M2.3 Human Hypothesis / Variation Brief
+
+Goal:
+
+**Convert a fresh M2.2 observation into an explicitly human-authored, content-addressed experiment brief without mutating or generating any Recipe or Candidate.**
+
+#### Contract
+
+```text
+variation_brief_version = 0.1
+brief_id
+basis
+human_input
+authority
+```
+
+Basis:
+
+```text
+delta_inspector_id
+context_pack_id
+decision_memory_sha256
+query
+current_recipe
+reference
+```
+
+Human input:
+
+```text
+authorship = human_explicit
+hypothesis
+listening_for
+planned_change
+preserve[]
+```
+
+Authority:
+
+```text
+recipe_mutation = none
+candidate_selection = none
+candidate_generation = none
+```
+
+#### Human-input requirement
+
+`hypothesis` and `listening_for` are required non-empty user-authored strings.
+
+MGAL does not synthesize either field from Inspector deltas.
+
+#### Planned change
+
+Supported dimensions:
+
+```text
+layers
+gain
+offset
+fade
+normalize
+sources
+other
+```
+
+Supported actions:
+
+```text
+increase
+decrease
+hold
+add
+remove
+replace
+toggle
+custom
+```
+
+Shape:
+
+```text
+dimension
+action
+amount
+unit
+note
+```
+
+Unit rules:
+
+- gain numeric amount → ratio
+- offset numeric amount → ms
+- fade numeric amount → ms
+- layers numeric amount → non-negative integer count
+- normalize does not accept amount/unit
+- sources/other do not accept numeric amount
+
+#### Preserve constraints
+
+`preserve[]` contains explicit human text labels such as:
+
+```text
+source set
+layer count
+transient source
+```
+
+Items are trimmed and deduplicated.
+
+They are not executed in M2.3.
+
+#### Optional Inspector reference
+
+A Brief may have no reference.
+
+When supplied:
+
+```text
+entry_id
+role = past_winner | past_loser
+```
+
+The entry must exist in the Inspector.
+
+MGAL snapshots:
+
+```text
+entry_id
+archive_id
+source_intent
+pair_index
+role
+candidate_id
+reference_recipe
+current_minus_reference
+```
+
+A reference outside the Inspector is rejected.
+
+#### Historical semantics
+
+A Delta Inspector is freshness-sensitive.
+
+A saved Variation Brief is historical evidence.
+
+After creation, later changes to Current Recipe do not stale the Brief.
+
+The Brief records the observation basis and hypothesis as they existed at authoring time.
+
+#### Identity and storage
+
+Canonical payload hashing produces:
+
+```text
+brief:<20-char SHA-256 prefix>
+```
+
+Default workspace storage:
+
+```text
+audio/.mgal/variation-briefs/<hash>.json
+```
+
+Identical Brief content is idempotent and reuses the same file.
+
+#### Validation
+
+Validation requires:
+
+- supported version
+- non-empty Inspector/Context/Memory identifiers
+- valid human_explicit authorship
+- normalized planned change
+- unique non-empty preserve labels
+- valid optional reference role
+- content-derived brief ID
+- authority boundary exactly equal to none/none/none
+
+Validation rejects automatic-action fields including:
+
+```text
+generated_recipe
+recommended_candidate
+auto_select
+candidate_ranking
+preference_score
+similarity_score
+apply_winner
+```
+
+#### CLI
+
+```bash
+mgal variation-brief-create \
+  inspector.json \
+  human-input.json \
+  --audio-root ./audio \
+  [--output brief.json]
+
+mgal variation-brief-list \
+  --audio-root ./audio
+
+mgal variation-brief-validate \
+  brief.json
+```
+
+#### Server API
+
+```text
+GET  /api/variation-briefs
+POST /api/variation-briefs
+```
+
+POST accepts:
+
+```text
+inspector
+human_input
+```
+
+and returns the normalized Brief plus storage result.
+
+#### Browser UI
+
+A fresh Delta Inspector enables the Variation Brief form.
+
+The form contains:
+
+- optional reference selector
+- hypothesis
+- listening target
+- dimension
+- action
+- optional amount
+- unit
+- note
+- preserve labels
+
+Reference selector is populated only from the current Inspector's observations.
+
+When Inspector is absent or stale, Variation Brief input is disabled.
+
+Saving a Brief:
+
+- stores no Recipe mutation
+- stores no Candidate mutation
+- refreshes the historical Brief shelf
+- keeps current Recipe unchanged
+
+Browser verifies the returned authorship and authority boundary before accepting success.
+
+#### M2.3 acceptance
+
+- Brief requires explicit human hypothesis
+- Brief requires explicit listening target
+- one normalized planned change is stored
+- optional preserve labels are stored and deduplicated
+- reference may be general/null
+- reference may point to an Inspector past winner or loser
+- fabricated Inspector reference is rejected
+- referenced Recipe and current-minus-reference delta are snapshotted
+- Brief stores human_explicit authorship
+- Brief stores no Recipe mutation authority
+- Brief stores no Candidate selection authority
+- Brief stores no Candidate generation authority
+- Brief receives deterministic content-derived ID
+- identical Brief saves are idempotent
+- saved Brief remains valid after Current Recipe later changes
+- CLI supports create/list/validate
+- server supports list/create
+- Browser enables Brief input only with a fresh Inspector
+- Browser displays saved Brief history
+- Browser form does not call Recipe/Candidate mutation functions
+- automatic-action fields are rejected
+- existing M2.2 Inspector remains unchanged
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
