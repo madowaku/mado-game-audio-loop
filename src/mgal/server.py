@@ -75,7 +75,7 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
     root = Path(audio_root).resolve()
 
     class MGALHandler(BaseHTTPRequestHandler):
-        server_version = "MGAL/1.6"
+        server_version = "MGAL/1.7"
 
         def log_message(self, format: str, *args: object) -> None:
             print(f"[mgal] {self.address_string()} - {format % args}")
