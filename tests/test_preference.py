@@ -9,9 +9,13 @@ from mgal.cli import main
 from mgal.evidence import build_evidence_bundle, verify_evidence_bundle
 from mgal.preference import (
     PreferenceEvidenceError,
+    archive_preference_evidence,
     compile_preference_evidence,
+    list_preference_archives,
+    replay_preference_archive,
     replay_preference_evidence,
     validate_preference_evidence,
+    verify_preference_archive,
 )
 
 
@@ -324,3 +328,209 @@ def test_preference_evidence_can_attach_to_main_evidence_bundle(
         verified["preference"]["applied_candidate_id"]
         == "candidate-b"
     )
+
+
+def test_preference_archive_is_content_addressed_and_idempotent(
+    tmp_path: Path,
+):
+    for name, value in (("a.wav", 100), ("b.wav", 200), ("c.wav", 300)):
+        _write_wav(tmp_path / name, value)
+
+    evidence = compile_preference_evidence(
+        _preference_payload(_board()),
+        tmp_path,
+    )
+
+    first = archive_preference_evidence(
+        evidence,
+        tmp_path,
+    )
+    second = archive_preference_evidence(
+        evidence,
+        tmp_path,
+    )
+
+    assert first["ok"] is True
+    assert first["reused"] is False
+    assert second["reused"] is True
+    assert second["archive_id"] == first["archive_id"]
+
+    session = (
+        tmp_path
+        / ".mgal"
+        / "preferences"
+        / first["archive_id"]
+    )
+    assert (session / "manifest.json").is_file()
+    assert (session / "evidence.json").is_file()
+
+    verified = verify_preference_archive(
+        tmp_path,
+        first["archive_id"],
+    )
+    assert verified["sources_verified"] == 3
+    assert verified["pair_count"] == 3
+
+
+def test_preference_archive_list_and_replay_preserve_recipe_details(
+    tmp_path: Path,
+):
+    for name, value in (("a.wav", 100), ("b.wav", 200), ("c.wav", 300)):
+        _write_wav(tmp_path / name, value)
+
+    board = _board()
+    board["candidates"][1]["recipe"]["layers"][0]["gain"] = 0.55
+    board["candidates"][1]["recipe"]["layers"][0]["offset_ms"] = 120
+
+    evidence = compile_preference_evidence(
+        _preference_payload(board),
+        tmp_path,
+    )
+    archived = archive_preference_evidence(
+        evidence,
+        tmp_path,
+        archive_id="session-one",
+    )
+
+    listing = list_preference_archives(tmp_path)
+    assert len(listing) == 1
+    assert listing[0]["archive_id"] == "session-one"
+    assert listing[0]["ok"] is True
+
+    replay = replay_preference_archive(
+        tmp_path,
+        "session-one",
+    )
+    assert replay["archive_id"] == "session-one"
+    pair = next(
+        item
+        for item in replay["replay_pairs"]
+        if item["left_candidate_id"] == "candidate-b"
+        or item["right_candidate_id"] == "candidate-b"
+    )
+    recipe = (
+        pair["left_recipe"]
+        if pair["left_candidate_id"] == "candidate-b"
+        else pair["right_recipe"]
+    )
+    assert recipe["layers"][0]["gain"] == 0.55
+    assert recipe["layers"][0]["offset_ms"] == 120
+
+
+def test_preference_archive_rejects_same_id_for_different_evidence(
+    tmp_path: Path,
+):
+    for name, value in (("a.wav", 100), ("b.wav", 200), ("c.wav", 300)):
+        _write_wav(tmp_path / name, value)
+
+    first = compile_preference_evidence(
+        _preference_payload(_board()),
+        tmp_path,
+    )
+    second = compile_preference_evidence(
+        _preference_payload(_board(), tie=True),
+        tmp_path,
+    )
+
+    archive_preference_evidence(
+        first,
+        tmp_path,
+        archive_id="fixed",
+    )
+
+    with pytest.raises(
+        PreferenceEvidenceError,
+        match="different evidence",
+    ):
+        archive_preference_evidence(
+            second,
+            tmp_path,
+            archive_id="fixed",
+        )
+
+
+def test_preference_archive_reports_changed_source_as_invalid(
+    tmp_path: Path,
+):
+    for name, value in (("a.wav", 100), ("b.wav", 200), ("c.wav", 300)):
+        _write_wav(tmp_path / name, value)
+
+    evidence = compile_preference_evidence(
+        _preference_payload(_board()),
+        tmp_path,
+    )
+    archive_preference_evidence(
+        evidence,
+        tmp_path,
+        archive_id="changed-source",
+    )
+
+    _write_wav(tmp_path / "b.wav", 999)
+
+    listing = list_preference_archives(tmp_path)
+    assert listing[0]["archive_id"] == "changed-source"
+    assert listing[0]["ok"] is False
+    assert "hash changed" in listing[0]["error"]
+
+    with pytest.raises(
+        PreferenceEvidenceError,
+        match="hash changed",
+    ):
+        replay_preference_archive(
+            tmp_path,
+            "changed-source",
+        )
+
+
+def test_preference_archive_cli_round_trip(tmp_path: Path, capsys):
+    for name, value in (("a.wav", 100), ("b.wav", 200), ("c.wav", 300)):
+        _write_wav(tmp_path / name, value)
+
+    evidence = compile_preference_evidence(
+        _preference_payload(_board()),
+        tmp_path,
+    )
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(
+        json.dumps(evidence),
+        encoding="utf-8",
+    )
+
+    assert main(
+        [
+            "preference-archive",
+            str(evidence_path),
+            "--audio-root",
+            str(tmp_path),
+            "--archive-id",
+            "cli-session",
+        ]
+    ) == 0
+    archived = json.loads(capsys.readouterr().out)
+    assert archived["archive_id"] == "cli-session"
+
+    assert main(
+        [
+            "preference-list",
+            "--audio-root",
+            str(tmp_path),
+        ]
+    ) == 0
+    listing = json.loads(capsys.readouterr().out)
+    assert listing[0]["archive_id"] == "cli-session"
+
+    replay_path = tmp_path / "archive-replay.json"
+    assert main(
+        [
+            "preference-replay-archive",
+            "cli-session",
+            "--audio-root",
+            str(tmp_path),
+            "--output",
+            str(replay_path),
+        ]
+    ) == 0
+    replay = json.loads(capsys.readouterr().out)
+    assert replay["ok"] is True
+    assert replay["archive_id"] == "cli-session"
+    assert replay_path.is_file()
