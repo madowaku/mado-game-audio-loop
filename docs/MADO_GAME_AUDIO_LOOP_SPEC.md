@@ -3240,6 +3240,212 @@ Browser verifies the returned authorship and authority boundary before accepting
 - existing M2.2 Inspector remains unchanged
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M2.4 Variation Brief → Candidate Plan Compiler
+
+Goal:
+
+**Compile an explicit M2.3 Variation Brief into a deterministic A/B/C experiment plan without generating Recipes, mutating Candidate Board state, or selecting a Candidate.**
+
+#### Candidate Plan 0.1
+
+```text
+candidate_plan_version
+plan_id
+variation_brief_id
+basis
+experiment
+variants[]
+unresolved_slots[]
+ready_for_materialization
+authority
+```
+
+Authority:
+
+```text
+recipe_materialization = none
+candidate_generation = none
+candidate_selection = none
+```
+
+#### Experiment snapshot
+
+```text
+hypothesis
+listening_for
+planned_change
+preserve[]
+```
+
+`planned_change` is revalidated using the M2.3 dimension/action/amount/unit contract.
+
+#### Fixed roles
+
+Exactly three variants are required:
+
+```text
+A = control
+B = hypothesis
+C = contrast
+```
+
+A:
+
+```text
+resolution = resolved
+derivation = preserve_current_recipe
+change = null
+hypothesis = null
+```
+
+B:
+
+```text
+resolution = resolved
+derivation = human_variation_brief
+change = exact experiment.planned_change
+hypothesis = exact experiment.hypothesis
+```
+
+All variants reuse the human `listening_for` target.
+
+#### Contrast derivation
+
+Safe deterministic inverses:
+
+```text
+increase ↔ decrease
+add      ↔ remove
+```
+
+The same dimension, amount, unit, and human note are retained.
+
+Resolved contrast:
+
+```text
+resolution = resolved
+derivation = deterministic_inverse_v1
+```
+
+Unsafe/non-unique inverse actions:
+
+```text
+hold
+replace
+toggle
+custom
+```
+
+produce:
+
+```text
+resolution = manual_required
+derivation = non_invertible_human_change
+change = null
+```
+
+No contrast intent is guessed.
+
+#### Readiness
+
+```text
+unresolved_slots
+ready_for_materialization
+```
+
+must be recomputable from variant resolution.
+
+A manual C makes readiness false.
+
+#### Identity/storage
+
+```text
+plan:<20-char canonical SHA-256 prefix>
+```
+
+Default storage:
+
+```text
+audio/.mgal/candidate-plans/<hash>.json
+```
+
+Identical compilation is idempotent.
+
+#### Semantic validation
+
+Validation independently recomputes:
+
+- planned-change normalization
+- B equality with planned change
+- C deterministic inverse/manual requirement
+- unresolved slots
+- materialization readiness
+- Plan content-derived ID
+
+This detects semantic tampering even if a new hash is written.
+
+#### CLI
+
+```bash
+mgal candidate-plan-compile brief.json \
+  --audio-root ./audio \
+  [--output plan.json]
+
+mgal candidate-plan-list \
+  --audio-root ./audio
+
+mgal candidate-plan-validate \
+  plan.json
+```
+
+#### Server API
+
+```text
+GET  /api/candidate-plans
+POST /api/candidate-plans
+```
+
+POST request:
+
+```text
+brief_id
+```
+
+The server loads the saved Variation Brief by content-addressed ID before compilation.
+
+#### Browser UI
+
+Variation Brief cards expose `Compile plan`.
+
+Compiled cards show `Plan ready` or `Plan needs C input`.
+
+The Candidate Plan shelf displays A/B/C role, resolution, and planned change.
+
+No Recipe materialization or Candidate mutation control is exposed.
+
+#### M2.4 acceptance
+
+- a valid saved Variation Brief compiles into exactly A/B/C roles
+- A is a resolved no-change control
+- B preserves the exact human planned change
+- B preserves the exact human hypothesis
+- safe directional actions produce a deterministic inverse C
+- hold/replace/toggle/custom produce manual_required C
+- compiler never guesses a non-invertible contrast
+- planned-change units are revalidated standalone
+- unresolved_slots and readiness are recomputed
+- Plan has deterministic content-derived identity
+- repeated compilation is idempotent
+- semantic B/C tampering is rejected
+- CLI supports compile/list/validate
+- server supports list/compile by saved brief ID
+- Browser exposes Compile plan from saved Briefs
+- Browser displays A/B/C roles and unresolved contrast state
+- Browser exposes no Recipe materialization or Candidate selection action
+- no generated/materialized Recipe field is allowed
+- existing M2.3 Variation Brief remains unchanged
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
