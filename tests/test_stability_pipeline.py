@@ -5,7 +5,9 @@ from pathlib import Path
 import wave
 
 from mgal.evidence import build_evidence_bundle, verify_evidence_bundle
+from mgal.normalizer import normalize_provider_result
 from mgal.provider import (
+    LocalFileProvider,
     SourceRequest,
     write_provider_provenance_ledger,
 )
@@ -20,20 +22,40 @@ from mgal.providers.stability import (
 )
 
 
-def _wav_bytes(value: int) -> bytes:
+def _wav_bytes(
+    value: int,
+    *,
+    sample_rate: int,
+    channels: int,
+) -> bytes:
     buffer = io.BytesIO()
-    data = array("h", [value] * 80)
+    samples = array("h")
+    for _ in range(160):
+        for channel in range(channels):
+            samples.append(value + channel * 100)
     with wave.open(buffer, "wb") as wav:
-        wav.setnchannels(1)
+        wav.setnchannels(channels)
         wav.setsampwidth(2)
-        wav.setframerate(8000)
-        wav.writeframes(data.tobytes())
+        wav.setframerate(sample_rate)
+        wav.writeframes(samples.tobytes())
     return buffer.getvalue()
 
 
-def _write_wav(path: Path, value: int) -> None:
+def _write_wav(
+    path: Path,
+    value: int,
+    *,
+    sample_rate: int,
+    channels: int,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(_wav_bytes(value))
+    path.write_bytes(
+        _wav_bytes(
+            value,
+            sample_rate=sample_rate,
+            channels=channels,
+        )
+    )
 
 
 class FakeTransport:
@@ -48,7 +70,11 @@ class FakeTransport:
     ) -> StabilityGeneration:
         return StabilityGeneration(
             generation_id="b" * 64,
-            audio_bytes=_wav_bytes(900),
+            audio_bytes=_wav_bytes(
+                900,
+                sample_rate=48_000,
+                channels=2,
+            ),
             duration_seconds=duration_seconds,
             seed=seed,
             steps=steps,
@@ -56,12 +82,20 @@ class FakeTransport:
         )
 
 
-def test_stability_candidate_reaches_strict_evidence_bundle(tmp_path: Path):
+def test_stability_candidate_normalizes_into_strict_evidence_bundle(
+    tmp_path: Path,
+):
     audio_root = tmp_path / "audio"
-    _write_wav(audio_root / "metal.wav", 400)
+    local_raw_root = tmp_path / "raw-local"
+    _write_wav(
+        local_raw_root / "metal.wav",
+        400,
+        sample_rate=8_000,
+        channels=1,
+    )
 
     local_ledger = write_provenance_ledger(
-        audio_root,
+        local_raw_root,
         tmp_path / "local-provenance.json",
     )
     update_provenance_entry(
@@ -72,9 +106,29 @@ def test_stability_candidate_reaches_strict_evidence_bundle(tmp_path: Path):
         license_expression="CC0-1.0",
     )
 
-    generated_root = audio_root / "generated"
+    local_provider = LocalFileProvider(
+        local_raw_root,
+        local_ledger,
+    )
+    local_result = local_provider.provide(
+        SourceRequest(
+            request_id="metal",
+            intent="metal",
+            count=1,
+        )
+    )
+    local_normalized = normalize_provider_result(
+        local_result,
+        audio_root / "canonical" / "local",
+    )
+    local_normalized_ledger = write_provider_provenance_ledger(
+        local_normalized,
+        tmp_path / "local-normalized-provenance.json",
+    )
+
+    stability_raw_root = tmp_path / "raw-stability"
     provider = StabilityAudioProvider(
-        generated_root,
+        stability_raw_root,
         allow_paid=True,
         transport=FakeTransport(),
     )
@@ -87,19 +141,32 @@ def test_stability_candidate_reaches_strict_evidence_bundle(tmp_path: Path):
             seed="42",
         )
     )
-    generated = provider_result.candidates[0]
-
-    provider_ledger = write_provider_provenance_ledger(
+    generated_normalized = normalize_provider_result(
         provider_result,
-        tmp_path / "generated-provenance.json",
+        audio_root / "canonical" / "generated",
     )
+    generated_normalized_ledger = write_provider_provenance_ledger(
+        generated_normalized,
+        tmp_path / "generated-normalized-provenance.json",
+    )
+
     merged_ledger = merge_provenance_ledgers(
-        [local_ledger, provider_ledger],
+        [
+            local_normalized_ledger,
+            generated_normalized_ledger,
+        ],
         tmp_path / "merged-provenance.json",
     )
 
+    local_source = (
+        Path("canonical")
+        / "local"
+        / local_normalized.candidates[0].relative_path
+    ).as_posix()
     generated_source = (
-        Path("generated") / generated.relative_path
+        Path("canonical")
+        / "generated"
+        / generated_normalized.candidates[0].relative_path
     ).as_posix()
 
     base_id = "slash-base"
@@ -113,7 +180,7 @@ def test_stability_candidate_reaches_strict_evidence_bundle(tmp_path: Path):
             "intent": "metallic slash",
             "layers": [
                 {
-                    "source": "metal.wav",
+                    "source": local_source,
                     "gain": 0.5,
                     "offset_ms": 0,
                 }
@@ -144,7 +211,7 @@ def test_stability_candidate_reaches_strict_evidence_bundle(tmp_path: Path):
                     "intent": "metallic slash with generated impact",
                     "layers": [
                         {
-                            "source": "metal.wav",
+                            "source": local_source,
                             "gain": 0.5,
                             "offset_ms": 0,
                         },
@@ -184,3 +251,19 @@ def test_stability_candidate_reaches_strict_evidence_bundle(tmp_path: Path):
     assert verification["ok"] is True
     assert verification["provenance"]["complete"] is True
     assert verification["provenance"]["entries"] == 2
+
+    provenance = json.loads(
+        (bundle / "provenance-ledger.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert all(
+        entry["normalization"]["profile_id"]
+        == "mgal-pcm16-mono-44100-v1"
+        for entry in provenance["entries"]
+    )
+
+    with wave.open(str(bundle / "output.wav"), "rb") as wav:
+        assert wav.getframerate() == 44_100
+        assert wav.getnchannels() == 1
+        assert wav.getsampwidth() == 2
