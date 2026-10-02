@@ -46,6 +46,14 @@ def test_candidate_board_static_contract():
         "decision-memory-summary",
         "decision-memory-list",
         "refresh-decision-memory",
+        "load-decision-context",
+        "download-decision-context",
+        "decision-context-panel",
+        "decision-context-count",
+        "decision-context-summary",
+        "decision-context-stale",
+        "decision-context-empty",
+        "decision-context-list",
     ):
         assert f'id="{element_id}"' in html
 
@@ -119,6 +127,13 @@ def test_candidate_board_static_contract():
         "/api/decision-memory",
         "/promote",
         "Promote memory",
+        "loadDecisionContext",
+        "renderDecisionContext",
+        "markDecisionContextStale",
+        "downloadDecisionContext",
+        "/api/decision-context",
+        "reference_only",
+        "selection_effect",
     ):
         assert token in js
 
@@ -369,3 +384,35 @@ def test_decision_memory_ui_contract():
     assert ".decision-memory" in css
     assert ".decision-memory-row" in css
     assert ".memory-promotion-action" in css
+
+
+def test_decision_context_reference_only_ui_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "Load memory context" in html
+    assert "Download context pack" in html
+    assert "MEMORY CONTEXT · REFERENCE ONLY" in html
+    assert "does not rank, copy, select, or apply any Candidate" in html
+    assert "Intent changed. Reload context" in html
+
+    assert 'fetch(' in js
+    assert '"/api/decision-context?intent="' in js
+    assert '"&limit=6"' in js
+    assert "state.decisionContextStale" in js
+    assert "normalizeIntentForContext" in js
+    assert "downloadDecisionContextButton.disabled" in js
+    assert "entry.match.matched_terms" in js
+    assert "observed Δ layers" in js
+
+    context_start = js.index("function renderDecisionContext()")
+    context_end = js.index("function formatSignedNumber", context_start)
+    context_code = js[context_start:context_end]
+    assert "setCandidateDecision" not in context_code
+    assert "copyActiveInto" not in context_code
+    assert "applyPreferenceWinner" not in context_code
+
+    assert ".decision-context-panel" in css
+    assert ".decision-context-row" in css
+    assert ".decision-context-stale" in css
