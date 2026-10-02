@@ -878,6 +878,14 @@ function renderCandidateCard(candidate) {
     (changes === 1 ? " change" : " changes") +
     " vs base";
 
+  const sourceSummary = document.createElement("div");
+  sourceSummary.className = "candidate-sources";
+  sourceSummary.textContent = candidate.layers
+    .map(function (layer) {
+      return layer.sound.name;
+    })
+    .join(" + ");
+
   const actions = document.createElement("div");
   actions.className = "candidate-actions";
 
@@ -921,7 +929,7 @@ function renderCandidateCard(candidate) {
     candidate.reason = reason.value;
   });
 
-  card.append(head, delta, actions, decisions, reason);
+  card.append(head, delta, sourceSummary, actions, decisions, reason);
   return card;
 }
 
