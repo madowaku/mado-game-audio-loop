@@ -679,6 +679,77 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   color: #b8c69f !important;
 }
 
+.decision-context-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 10px;
+}
+
+.decision-context-panel {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 11px;
+  border: 1px solid #3a4231;
+  border-radius: 11px;
+  background: #151a14;
+}
+
+.decision-context-panel[hidden] { display: none; }
+
+.decision-context-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.decision-context-head h3 {
+  margin: 2px 0 0;
+  font-size: .88rem;
+}
+
+.decision-context-list {
+  display: grid;
+  gap: 6px;
+}
+
+.decision-context-row {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid #2d3427;
+  border-radius: 9px;
+  background: #191e17;
+}
+
+.decision-context-row > span {
+  color: #858c80;
+  font-size: .69rem;
+  line-height: 1.4;
+}
+
+.decision-context-match {
+  color: #bdc99f !important;
+}
+
+.decision-context-delta {
+  color: #aeb99b !important;
+}
+
+.decision-context-stale {
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid #7b6734;
+  border-radius: 8px;
+  color: #dacb92;
+  background: #282417;
+  font-size: .72rem;
+}
+
+.decision-context-stale[hidden] { display: none; }
+
 .candidate-board { display: grid; gap: 10px; margin: 12px 0; }
 
 .candidate-card {
