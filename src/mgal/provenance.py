@@ -166,6 +166,12 @@ def _validate_entry_shape(entry: dict[str, Any], index: int) -> None:
     _require_string_or_none(entry.get("notes"), f"{prefix}.notes")
 
 
+def validate_provenance_entry(entry: dict[str, Any]) -> None:
+    if not isinstance(entry, dict):
+        raise ProvenanceLedgerError("provenance entry must be an object")
+    _validate_entry_shape(entry, 0)
+
+
 def load_provenance_ledger(path: str | Path) -> dict[str, Any]:
     path = Path(path)
     data = json.loads(path.read_text(encoding="utf-8"))
