@@ -160,3 +160,15 @@ def test_server_exposes_candidate_plan_contract():
     assert "list_candidate_plans" in source
     assert '"brief_id"' in source
     assert "CandidatePlanError" in source
+
+
+def test_server_exposes_materialized_recipe_set_contract():
+    from mgal import server as server_module
+
+    source = Path(server_module.__file__).read_text(encoding="utf-8")
+    assert 'parsed.path == "/api/materialized-recipe-sets"' in source
+    assert "materialize_saved_candidate_plan" in source
+    assert "list_materialized_recipe_sets" in source
+    assert '"plan_id"' in source
+    assert '"current_recipe"' in source
+    assert "RecipeMaterializerError" in source
