@@ -7,10 +7,14 @@ from typing import Any
 
 from .context_pack import (
     DecisionContextError,
+    build_decision_context_pack,
     load_decision_context_pack,
     validate_decision_context_pack,
 )
-from .decision_memory import load_decision_memory
+from .decision_memory import (
+    DecisionMemoryError,
+    load_decision_memory,
+)
 from .recipe import RecipeError, parse_recipe
 
 
@@ -235,9 +239,14 @@ def recipe_delta(
 def _memory_sha256(
     audio_root: str | Path,
 ) -> str:
-    memory = load_decision_memory(
-        audio_root
-    )
+    try:
+        memory = load_decision_memory(
+            audio_root
+        )
+    except DecisionMemoryError as exc:
+        raise DeltaInspectorError(
+            f"Decision Memory is invalid: {exc}"
+        ) from exc
     return _sha256_json(memory)
 
 
@@ -343,6 +352,12 @@ def build_delta_inspector_pack(
             "decision_memory_sha256"
         ],
         "query": context_pack["query"],
+        "current_recipe_document": json.loads(
+            json.dumps(
+                current_recipe,
+                ensure_ascii=False,
+            )
+        ),
         "current_recipe": current_summary,
         "inspection_count": len(
             inspections
@@ -410,6 +425,20 @@ def validate_delta_inspector_pack(
             "Delta Inspector contains an automatic-evaluation field"
         )
 
+    current_document = data.get(
+        "current_recipe_document"
+    )
+    if not isinstance(current_document, dict):
+        raise DeltaInspectorError(
+            "current_recipe_document must be an object"
+        )
+    try:
+        parse_recipe(current_document)
+    except RecipeError as exc:
+        raise DeltaInspectorError(
+            f"current_recipe_document is invalid: {exc}"
+        ) from exc
+
     current = data.get(
         "current_recipe"
     )
@@ -417,6 +446,15 @@ def validate_delta_inspector_pack(
         current,
         label="current",
     )
+    if (
+        current.get("recipe_sha256")
+        != _sha256_json(
+            current_document
+        )
+    ):
+        raise DeltaInspectorError(
+            "current Recipe fingerprint does not match document"
+        )
 
     inspections = data.get(
         "inspections"
@@ -600,3 +638,61 @@ def load_delta_inspector_pack(
         data
     )
     return data
+
+
+def verify_delta_inspector_pack_against_current(
+    pack_path: str | Path,
+    audio_root: str | Path,
+) -> dict[str, Any]:
+    pack = load_delta_inspector_pack(
+        pack_path
+    )
+
+    query = pack.get("query")
+    if not isinstance(query, dict):
+        raise DeltaInspectorError(
+            "Delta Inspector query must be an object"
+        )
+    intent = query.get("intent")
+    limit = query.get("limit")
+    if (
+        not isinstance(intent, str)
+        or not isinstance(limit, int)
+    ):
+        raise DeltaInspectorError(
+            "Delta Inspector query is incomplete"
+        )
+
+    context = build_decision_context_pack(
+        audio_root,
+        intent,
+        limit=limit,
+    )
+    if (
+        context["context_pack_id"]
+        != pack["context_pack_id"]
+    ):
+        raise DeltaInspectorError(
+            "Delta Inspector Context Pack is stale or does not match current retrieval"
+        )
+
+    rebuilt = build_delta_inspector_pack(
+        audio_root,
+        context,
+        pack["current_recipe_document"],
+    )
+    if rebuilt != pack:
+        raise DeltaInspectorError(
+            "Delta Inspector Pack does not match current Recipe and Context"
+        )
+
+    return {
+        "ok": True,
+        "delta_inspector_id": pack[
+            "delta_inspector_id"
+        ],
+        "fresh": True,
+        "inspections": pack[
+            "inspection_count"
+        ],
+    }
