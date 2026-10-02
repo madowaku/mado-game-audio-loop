@@ -2,11 +2,11 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → blind preference → archive → replay → decide → evidence → release**
+**provide → intake → blind preference → archive → recover → replay → decide → evidence → release**
 
-## Current milestone: M1.8 Preference Replay UI / Session Archive
+## Current milestone: M1.9 Preference Source Recovery / Portable Archive
 
-M1.8 turns Preference Evidence into a durable local history that can be reopened and replayed from the Browser Audition Board.
+M1.9 makes Preference history survive renamed and reorganized source libraries. Historical Recipe paths remain immutable; a separate SHA-256 Relink Map resolves where the same bytes live now.
 
 The workspace now carries:
 
@@ -20,6 +20,39 @@ audio/
             ├── manifest.json
             └── evidence.json
 ```
+
+## Source recovery
+
+If archived paths moved:
+
+```bash
+mgal preference-recover heavy-slash-review \
+  --audio-root ./audio \
+  --search-root ./audio
+```
+
+MGAL tries the historical path first, then scans same-size WAV files and hashes them. One exact SHA-256 match becomes `relinked`; multiple matches are `ambiguous`; no match is `missing`. MGAL never guesses.
+
+Default maps live at:
+
+```text
+audio/.mgal/preference-relinks/<archive-id>.json
+```
+
+The map is bound to the archive ID, Preference Evidence SHA-256, and Candidate Board SHA-256. Replay revalidates target size and hash every time.
+
+Portable replay can use a separate current source library:
+
+```bash
+mgal preference-replay-archive heavy-slash-review \
+  --audio-root ./workspace \
+  --search-root /mnt/current-sfx \
+  --relink-map ./heavy-slash-relink.json
+```
+
+The archive keeps its historical paths. Only the returned replay plan rewrites Recipe layer sources in memory to current resolved paths, preserving gain and offset.
+
+The Browser archive shelf now distinguishes `direct`, `relinked`, and `recoverable`. Recoverable sessions expose **Recover sources**, which scans the served audio root and restores Replay only when every source resolves uniquely.
 
 ## Archive a completed Preference Session
 
@@ -269,12 +302,12 @@ mgal bundle candidate-board.json \
 - archive deletion/pruning UI is not implemented
 - archive tags/notes are not implemented
 - Browser Replay does not auto-play the entire pair sequence
-- replay requires original workspace-relative source paths
-- Preference source relinking is not implemented yet
+- Browser recovery searches the served audio root; CLI may use a separate `--search-root`
+- duplicate byte-identical matches remain ambiguous until a future manual-resolution UI
 - archive has no wall-clock timestamp by design; identity is content-based
 
 ## Design principle
 
-> A creative decision becomes more useful when its history can be reopened without changing the present.
+> Move the files, not the history.
 
-M1.8 turns blind comparison Evidence into a navigable local decision archive.
+M1.9 makes Preference Archives portable across renamed folders and reorganized source libraries without rewriting historical Evidence.
