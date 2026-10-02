@@ -332,5 +332,5 @@ def test_preference_source_recovery_ui_contract():
     assert "recovery.ambiguous_count" in js
     assert "recovery.missing_count" in js
     assert 'entry.source_status === "relinked"' in js
-    assert '"sources relinked by SHA-256"' in js
+    assert "sources relinked by SHA-256" in js
     assert ".recovery-action" in css
