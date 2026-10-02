@@ -674,10 +674,8 @@ def save_materialized_recipe_set(
             raise RecipeMaterializerError(
                 "materialization directory exists without set.json"
             )
-        existing = json.loads(
-            set_path.read_text(
-                encoding="utf-8"
-            )
+        existing = load_materialized_recipe_set(
+            directory
         )
         if existing != recipe_set:
             raise RecipeMaterializerError(
@@ -734,12 +732,51 @@ def materialize_candidate_plan(
     }
 
 
+def _verify_split_recipe_files(
+    directory: Path,
+    recipe_set: dict[str, Any],
+) -> None:
+    for variant in recipe_set[
+        "variants"
+    ]:
+        filename = (
+            f"{variant['slot']}-"
+            f"{variant['role']}.json"
+        )
+        path = directory / filename
+        if not path.is_file():
+            raise RecipeMaterializerError(
+                f"materialized Recipe file is missing: {filename}"
+            )
+        try:
+            recipe = json.loads(
+                path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except json.JSONDecodeError as exc:
+            raise RecipeMaterializerError(
+                f"materialized Recipe file contains invalid JSON: {filename}"
+            ) from exc
+        if recipe != variant[
+            "recipe"
+        ]:
+            raise RecipeMaterializerError(
+                f"materialized Recipe file does not match set.json: {filename}"
+            )
+
+
 def load_materialized_recipe_set(
     path: str | Path,
 ) -> dict[str, Any]:
     path = Path(path)
-    if path.is_dir():
-        path = path / "set.json"
+    directory = (
+        path
+        if path.is_dir()
+        else None
+    )
+    if directory is not None:
+        path = directory / "set.json"
     try:
         data = json.loads(
             path.read_text(
@@ -760,6 +797,11 @@ def load_materialized_recipe_set(
     validate_materialized_recipe_set(
         data
     )
+    if directory is not None:
+        _verify_split_recipe_files(
+            directory,
+            data,
+        )
     return data
 
 
