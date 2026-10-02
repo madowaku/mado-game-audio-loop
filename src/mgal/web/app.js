@@ -21,6 +21,8 @@ const state = {
   decisionMemory: null,
   decisionContext: null,
   decisionContextStale: false,
+  deltaInspector: null,
+  deltaInspectorStale: false,
 };
 
 const list = document.querySelector("#audio-list");
@@ -98,6 +100,13 @@ const decisionContextSummary = document.querySelector("#decision-context-summary
 const decisionContextStale = document.querySelector("#decision-context-stale");
 const decisionContextEmpty = document.querySelector("#decision-context-empty");
 const decisionContextList = document.querySelector("#decision-context-list");
+const inspectCurrentDeltasButton = document.querySelector("#inspect-current-deltas");
+const downloadDeltaInspectorButton = document.querySelector("#download-delta-inspector");
+const deltaInspectorPanel = document.querySelector("#delta-inspector-panel");
+const deltaInspectorCount = document.querySelector("#delta-inspector-count");
+const deltaInspectorSummary = document.querySelector("#delta-inspector-summary");
+const deltaInspectorStale = document.querySelector("#delta-inspector-stale");
+const deltaInspectorList = document.querySelector("#delta-inspector-list");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -169,6 +178,7 @@ function candidatesForDisplay() {
 
 function setSelected(layers) {
   state.selected = layers;
+  markDeltaInspectorStale();
   const candidate = selectedCandidate();
   if (candidate) candidate.layers = layers;
 }
@@ -617,6 +627,7 @@ async function seedIntakeSession(intakeId, button) {
 
     const active = selectedCandidate();
     state.selected = active ? active.layers : [];
+    markDeltaInspectorStale();
     stopMix();
     renderRecipe();
     renderCandidates();
@@ -843,6 +854,7 @@ function renderLayer(layer) {
   gainValue.textContent = layer.gain.toFixed(2) + "×";
   gainSlider.addEventListener("input", function () {
     layer.gain = Number(gainSlider.value);
+    markDeltaInspectorStale();
     gainValue.textContent = layer.gain.toFixed(2) + "×";
     applyLiveGains();
     renderCandidates();
@@ -861,6 +873,7 @@ function renderLayer(layer) {
   offsetInput.addEventListener("change", function () {
     const value = Math.max(0, Math.min(5000, Number(offsetInput.value) || 0));
     layer.offset_ms = Math.round(value);
+    markDeltaInspectorStale();
     offsetInput.value = String(layer.offset_ms);
     scheduleMixRestart();
     renderCandidates();
@@ -907,6 +920,7 @@ function renderRecipe() {
     button.disabled = selected || state.selected.length >= 4;
     button.textContent = selected ? "✓ Added" : "＋ Add layer";
   });
+  updateDeltaInspectorControls();
 }
 
 function seedCandidates() {
@@ -935,6 +949,7 @@ function seedCandidates() {
 
   state.activeCandidateId = state.candidates[0].id;
   state.selected = state.candidates[0].layers;
+  markDeltaInspectorStale();
   stopMix();
   renderRecipe();
   renderCandidates();
@@ -946,6 +961,7 @@ function activateCandidate(candidate, options) {
   if (!preservePlayback) stopMix();
   state.activeCandidateId = candidate.id;
   state.selected = candidate.layers;
+  markDeltaInspectorStale();
   renderRecipe();
   renderCandidates();
   updateAuditionControls();
@@ -1003,6 +1019,7 @@ async function playSequentialCandidate(index) {
   const candidate = state.candidates[index];
   state.activeCandidateId = candidate.id;
   state.selected = candidate.layers;
+  markDeltaInspectorStale();
   renderRecipe();
   renderCandidates();
   updateAuditionControls();
@@ -1199,6 +1216,7 @@ function applyPreferenceWinner() {
   session.appliedCandidateId = winner.id;
   state.activeCandidateId = winner.id;
   state.selected = winner.layers;
+  markDeltaInspectorStale();
 
   renderRecipe();
   renderCandidates();
@@ -1464,6 +1482,191 @@ function normalizeIntentForContext(value) {
     .replace(/\s+/g, " ");
 }
 
+function deltaText(delta) {
+  return (
+    "Δ layers " +
+    formatSignedNumber(delta.layer_count_delta) +
+    " · gain " +
+    formatSignedNumber(delta.total_gain_delta) +
+    " · earliest " +
+    formatSignedNumber(delta.earliest_offset_ms_delta) +
+    "ms · latest " +
+    formatSignedNumber(delta.latest_offset_ms_delta) +
+    "ms · fade " +
+    formatSignedNumber(delta.fade_out_ms_delta) +
+    "ms · sources shared " +
+    String(delta.shared_source_count) +
+    " / current-only " +
+    String(delta.current_only_source_count) +
+    " / reference-only " +
+    String(delta.reference_only_source_count)
+  );
+}
+
+function updateDeltaInspectorControls() {
+  const hasContext = Boolean(state.decisionContext);
+  const contextFresh = hasContext && !state.decisionContextStale;
+  const hasRecipe = state.selected.length > 0;
+  inspectCurrentDeltasButton.disabled =
+    !contextFresh || !hasRecipe;
+  downloadDeltaInspectorButton.disabled =
+    !state.deltaInspector || state.deltaInspectorStale;
+}
+
+function renderDeltaInspector() {
+  const inspector = state.deltaInspector;
+  deltaInspectorList.replaceChildren();
+
+  if (!inspector) {
+    deltaInspectorPanel.hidden = true;
+    updateDeltaInspectorControls();
+    return;
+  }
+
+  deltaInspectorPanel.hidden = false;
+  deltaInspectorStale.hidden =
+    !state.deltaInspectorStale;
+  deltaInspectorCount.textContent =
+    String(inspector.inspection_count);
+  deltaInspectorSummary.textContent =
+    "Current " +
+    inspector.current_recipe.recipe_id +
+    " · " +
+    String(inspector.current_recipe.layer_count) +
+    " layer" +
+    (inspector.current_recipe.layer_count === 1 ? "" : "s") +
+    " · total gain " +
+    String(inspector.current_recipe.total_gain);
+
+  inspector.inspections.forEach(function (inspection) {
+    const card = document.createElement("article");
+    card.className = "delta-inspector-card";
+
+    const title = document.createElement("strong");
+    title.textContent =
+      inspection.archive_id +
+      " · pair " +
+      String(inspection.pair_index + 1) +
+      " · " +
+      inspection.source_intent;
+
+    const winner = document.createElement("div");
+    winner.className = "delta-inspector-reference";
+    const winnerLabel = document.createElement("span");
+    winnerLabel.textContent =
+      "Current − past winner · " +
+      inspection.winner_candidate_id;
+    const winnerDelta = document.createElement("span");
+    winnerDelta.textContent = deltaText(
+      inspection.current_vs_winner.delta
+    );
+    winner.append(winnerLabel, winnerDelta);
+
+    const loser = document.createElement("div");
+    loser.className = "delta-inspector-reference";
+    const loserLabel = document.createElement("span");
+    loserLabel.textContent =
+      "Current − past loser · " +
+      inspection.loser_candidate_id;
+    const loserDelta = document.createElement("span");
+    loserDelta.textContent = deltaText(
+      inspection.current_vs_loser.delta
+    );
+    loser.append(loserLabel, loserDelta);
+
+    card.append(title, winner, loser);
+    deltaInspectorList.appendChild(card);
+  });
+
+  updateDeltaInspectorControls();
+}
+
+function markDeltaInspectorStale() {
+  if (!state.deltaInspector) {
+    updateDeltaInspectorControls();
+    return;
+  }
+  state.deltaInspectorStale = true;
+  renderDeltaInspector();
+}
+
+async function inspectCurrentDeltas() {
+  const contextPack = state.decisionContext;
+  if (
+    !contextPack ||
+    state.decisionContextStale ||
+    state.selected.length === 0
+  ) {
+    return;
+  }
+
+  inspectCurrentDeltasButton.disabled = true;
+  inspectCurrentDeltasButton.textContent = "Inspecting…";
+
+  try {
+    const response = await fetch(
+      "/api/decision-context-inspect",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          context_pack: contextPack,
+          current_recipe: recipePayload(),
+        }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not inspect current Recipe deltas"
+      );
+    }
+    if (
+      !result.usage ||
+      result.usage.role !== "observation_only" ||
+      result.usage.selection_effect !== "none" ||
+      result.usage.mutation_effect !== "none"
+    ) {
+      throw new Error(
+        "Delta Inspector usage boundary is invalid"
+      );
+    }
+
+    state.deltaInspector = result;
+    state.deltaInspectorStale = false;
+    renderDeltaInspector();
+    status.textContent =
+      "Current Recipe deltas inspected · " +
+      String(result.inspection_count) +
+      " observation" +
+      (result.inspection_count === 1 ? "" : "s");
+  } catch (error) {
+    status.textContent =
+      "Delta Inspector failed: " + error.message;
+  } finally {
+    inspectCurrentDeltasButton.textContent =
+      "Inspect current deltas";
+    updateDeltaInspectorControls();
+  }
+}
+
+function downloadDeltaInspector() {
+  if (
+    !state.deltaInspector ||
+    state.deltaInspectorStale
+  ) {
+    return;
+  }
+  downloadJson(
+    state.deltaInspector,
+    escapeRecipeId(
+      state.deltaInspector.current_recipe.intent
+    ) + "-delta-inspector.json"
+  );
+}
+
 function renderDecisionContext() {
   const pack = state.decisionContext;
   decisionContextList.replaceChildren();
@@ -1546,6 +1749,7 @@ function renderDecisionContext() {
     row.append(title, source, match, delta);
     decisionContextList.appendChild(row);
   });
+  updateDeltaInspectorControls();
 }
 
 async function loadDecisionContext() {
@@ -1581,7 +1785,10 @@ async function loadDecisionContext() {
 
     state.decisionContext = result;
     state.decisionContextStale = false;
+    state.deltaInspector = null;
+    state.deltaInspectorStale = false;
     renderDecisionContext();
+    renderDeltaInspector();
     status.textContent =
       "Decision Context loaded · " +
       String(result.returned_entry_count) +
@@ -1606,6 +1813,9 @@ function markDecisionContextStale() {
   );
   state.decisionContextStale =
     current !== pack.query.normalized_intent;
+  if (state.decisionContextStale) {
+    markDeltaInspectorStale();
+  }
   renderDecisionContext();
 }
 
@@ -2298,6 +2508,8 @@ refreshDecisionMemoryButton.addEventListener("click", function () {
 });
 loadDecisionContextButton.addEventListener("click", loadDecisionContext);
 downloadDecisionContextButton.addEventListener("click", downloadDecisionContext);
+inspectCurrentDeltasButton.addEventListener("click", inspectCurrentDeltas);
+downloadDeltaInspectorButton.addEventListener("click", downloadDeltaInspector);
 intent.addEventListener("input", markDecisionContextStale);
 preferenceReplayPrev.addEventListener("click", function () {
   if (!state.preferenceReplay) return;
@@ -2334,6 +2546,7 @@ clearBoardButton.addEventListener("click", function () {
   state.activeCandidateId = null;
   state.boardBaseRecipe = null;
   state.selected = [];
+  markDeltaInspectorStale();
   renderRecipe();
   renderCandidates();
   renderIntakeSessions();
