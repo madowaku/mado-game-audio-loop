@@ -17,6 +17,12 @@ def test_candidate_board_static_contract():
         "intake-sessions",
         "intake-session-list",
         "clear-board",
+        "blind-mode",
+        "sequence-candidates",
+        "previous-candidate",
+        "next-candidate",
+        "audition-position",
+        "audition-shortcuts",
     ):
         assert f'id="{element_id}"' in html
 
@@ -47,6 +53,16 @@ def test_candidate_board_static_contract():
         "renderIntakeSessions",
         "makeLayerFromRecipeLayer",
         "/seed-board",
+        "updateAuditionControls",
+        "cancelSequentialAudition",
+        "playSequentialCandidate",
+        "startSequentialAudition",
+        "toggleBlindMode",
+        "moveCandidate",
+        "isTypingTarget",
+        "document.addEventListener(\"keydown\"",
+        "preserveSequence",
+        "onComplete",
     ):
         assert token in js
 
@@ -87,3 +103,47 @@ def test_intake_seed_ui_contract():
     assert ".intake-seed" in css
     assert "candidate-sources" in js
     assert ".candidate-sources" in css
+
+
+def test_blind_sequential_audition_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "Blind: Off" in html
+    assert "▶ A→B→C" in html
+    assert "Space replay" in html
+    assert "F favorite" in html
+    assert "X reject" in html
+    assert "S select" in html
+    assert "B blind" in html
+    assert "Q sequence" in html
+    assert "Esc stop" in html
+
+    assert "sequenceRunning: false" in js
+    assert "sequenceIndex: -1" in js
+    assert "playbackToken: 0" in js
+    assert "setTimeout(function ()" in js
+    assert "playSequentialCandidate(index + 1)" in js
+    assert "index >= state.candidates.length" in js
+    assert "candidate.decision" in js
+    assert 'setCandidateDecision(active.id, "favorite")' in js
+    assert 'setCandidateDecision(active.id, "reject")' in js
+    assert 'setCandidateDecision(active.id, "selected")' in js
+    assert 'target.closest("input, textarea, select")' in js
+
+    assert ".blind-mode .blind-sensitive" in css
+    assert ".blind-mode .intake-session-meta" in css
+    assert "#blind-mode.active" in css
+    assert "#sequence-candidates.active" in css
+
+
+def test_audition_modes_do_not_enter_candidate_board_payload():
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    start = js.index("function boardPayload()")
+    end = js.index("function downloadJson", start)
+    board_payload_code = js[start:end]
+
+    assert "blindMode" not in board_payload_code
+    assert "sequenceRunning" not in board_payload_code
+    assert "sequenceIndex" not in board_payload_code
