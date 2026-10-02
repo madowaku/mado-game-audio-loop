@@ -82,9 +82,40 @@
           <button id="sequence-candidates" class="secondary compact" type="button" disabled>▶ A→B→C</button>
           <button id="previous-candidate" class="secondary compact" type="button" disabled>← Prev</button>
           <button id="next-candidate" class="secondary compact" type="button" disabled>Next →</button>
+          <button id="preference-session" class="secondary compact" type="button" disabled>◇ Preference</button>
           <span id="audition-position" class="audition-position">No candidates</span>
         </div>
-        <p id="audition-shortcuts" class="audition-shortcuts">Space replay · ←/→ move · F favorite · X reject · S select · B blind · Q sequence · Esc stop</p>
+        <p id="audition-shortcuts" class="audition-shortcuts">Space replay · ←/→ move · F favorite · X reject · S select · B blind · Q sequence · P preference · Esc stop</p>
+        <section id="preference-panel" class="preference-panel" hidden>
+          <div class="preference-head">
+            <div>
+              <p class="eyebrow">RANDOMIZED BLIND</p>
+              <h3 id="preference-title">Preference session</h3>
+            </div>
+            <span id="preference-progress" class="count">0 / 0</span>
+          </div>
+          <p id="preference-message" class="preference-message"></p>
+          <div id="preference-pair" class="preference-pair" hidden>
+            <div class="preference-side">
+              <strong id="preference-left-label">X</strong>
+              <button id="preference-left-play" class="secondary compact" type="button">▶ Play X</button>
+              <button id="preference-left-vote" class="primary compact" type="button">Prefer X</button>
+            </div>
+            <span class="preference-versus">vs</span>
+            <div class="preference-side">
+              <strong id="preference-right-label">Y</strong>
+              <button id="preference-right-play" class="secondary compact" type="button">▶ Play Y</button>
+              <button id="preference-right-vote" class="primary compact" type="button">Prefer Y</button>
+            </div>
+          </div>
+          <div id="preference-reveal" class="preference-reveal" hidden></div>
+          <div class="preference-actions">
+            <button id="preference-reveal-button" class="secondary compact" type="button" disabled>Reveal</button>
+            <button id="preference-apply" class="primary compact" type="button" disabled>Apply winner</button>
+            <button id="preference-close" class="secondary compact" type="button">Close</button>
+          </div>
+          <p class="audition-shortcuts">During session: 1/2 play · ←/→ prefer · R reveal after voting · Esc stop audio</p>
+        </section>
         <p id="candidate-help" class="hint">Build a mix, then fork it into three candidates for rapid comparison.</p>
         <div id="candidate-board" class="candidate-board"></div>
         <button id="download-board" class="secondary full-width" type="button" disabled>Download board JSON</button>
