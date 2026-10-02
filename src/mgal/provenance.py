@@ -163,6 +163,59 @@ def _validate_entry_shape(entry: dict[str, Any], index: int) -> None:
         for key in ("recorded_by", "recorded_at", "device"):
             _require_string_or_none(recording.get(key), f"{prefix}.recording.{key}")
 
+    normalization = entry.get("normalization")
+    if normalization is not None:
+        if not isinstance(normalization, dict):
+            raise ProvenanceLedgerError(
+                f"{prefix}.normalization must be object or null"
+            )
+        profile_id = normalization.get("profile_id")
+        passthrough = normalization.get("passthrough")
+        algorithm = normalization.get("algorithm")
+        if not isinstance(profile_id, str) or not profile_id:
+            raise ProvenanceLedgerError(
+                f"{prefix}.normalization.profile_id must be a non-empty string"
+            )
+        if not isinstance(passthrough, bool):
+            raise ProvenanceLedgerError(
+                f"{prefix}.normalization.passthrough must be boolean"
+            )
+        if not isinstance(algorithm, str) or not algorithm:
+            raise ProvenanceLedgerError(
+                f"{prefix}.normalization.algorithm must be a non-empty string"
+            )
+
+        original = normalization.get("original")
+        normalized = normalization.get("normalized")
+        for label, payload in (("original", original), ("normalized", normalized)):
+            if not isinstance(payload, dict):
+                raise ProvenanceLedgerError(
+                    f"{prefix}.normalization.{label} must be an object"
+                )
+            source_id_value = payload.get("source_id")
+            hash_value = payload.get("sha256")
+            if not isinstance(hash_value, str) or len(hash_value) != 64:
+                raise ProvenanceLedgerError(
+                    f"{prefix}.normalization.{label}.sha256 must be a 64-character string"
+                )
+            if source_id_value != source_id_for_hash(hash_value):
+                raise ProvenanceLedgerError(
+                    f"{prefix}.normalization.{label}.source_id must match sha256"
+                )
+            if not isinstance(payload.get("bytes"), int) or payload["bytes"] < 0:
+                raise ProvenanceLedgerError(
+                    f"{prefix}.normalization.{label}.bytes must be a non-negative integer"
+                )
+
+        if normalized.get("source_id") != source_id:
+            raise ProvenanceLedgerError(
+                f"{prefix}.normalization.normalized.source_id must match entry source_id"
+            )
+        if normalized.get("sha256") != sha256:
+            raise ProvenanceLedgerError(
+                f"{prefix}.normalization.normalized.sha256 must match entry sha256"
+            )
+
     _require_string_or_none(entry.get("notes"), f"{prefix}.notes")
 
 
