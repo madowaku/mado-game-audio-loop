@@ -1225,6 +1225,153 @@ deterministic 44.1k mono output.wav
 - CI uses no network and spends no provider credits
 - Browser JavaScript checks remain green
 
+### MGAL-M1.3 Provider Intake / Audition Bridge
+
+Goal:
+
+**Turn a saved Provider Result into normalized, provenance-registered workspace candidates that appear in the Browser Audition Board without restarting the server.**
+
+Intake pipeline:
+
+```text
+saved Provider Result
+      ↓
+validate Provider Contract
+      ↓
+M1.2 normalize
+      ↓
+audio/incoming/<intake-id>/
+      ↓
+intake manifest
+      ↓
+workspace Provenance Ledger
+      ↓
+/api/audio enrichment
+      ↓
+Browser Audition Board
+```
+
+CLI:
+
+```bash
+mgal provider-intake provider-result.json \
+  --audio-root ./audio \
+  --intake-id heavy-slash-001
+```
+
+Workspace metadata:
+
+```text
+audio/.mgal/
+├── provenance-ledger.json
+└── intakes/
+    └── <intake-id>/
+        ├── manifest.json
+        ├── provider-result.json
+        └── provenance-ledger.json
+```
+
+Canonical WAVs are written to:
+
+```text
+audio/incoming/<intake-id>/
+```
+
+Intake ID behavior:
+
+- explicit `--intake-id` may be supplied
+- otherwise derived deterministically from request ID, provider ID, and Provider Result SHA-256 prefix
+- identical repeated intake is idempotent
+- reuse verifies current intake WAV hashes
+- same intake ID with a different Provider Result is rejected
+
+The intake manifest records:
+
+- intake version
+- intake ID
+- raw Provider Result SHA-256
+- provider ID / kind
+- SourceRequest snapshot
+- canonical normalization profile
+- normalized Provider Result SHA-256
+- candidate count
+- workspace-relative candidate paths
+- candidate source IDs / hashes / sizes
+- source type
+- generation metadata
+- normalization lineage
+
+Transactional ordering:
+
+The intake session and canonical WAVs are verified before the shared workspace Ledger is mutated.
+
+If intake construction fails before commit, the newly created intake/session files are removed.
+
+Workspace provenance entries use paths relative to the served audio root.
+
+Browser bridge:
+
+`build_catalog()` loads valid intake manifests and enriches matching WAV rows with:
+
+```text
+intake_id
+provider_id
+provider_kind
+request_id
+intent
+source_type
+source_id
+generation_provider
+generation_model
+prompt
+normalization_profile_id
+original_source_id
+```
+
+Audition Board cards render Provider/intake badges and prompt context.
+
+Search indexes the intake metadata.
+
+Catalog refresh:
+
+- manual Refresh sources button
+- automatic 2.5-second polling
+- UI rerenders the source list only when a catalog signature changes
+- no server restart required after intake
+
+Acquisition remains separate from intake.
+
+This is intentional for paid providers:
+
+```text
+paid Provider call
+      ↓
+saved immutable Provider Result
+      ↓
+repeatable local intake
+```
+
+A saved paid generation can therefore be re-intaken without another provider charge.
+
+#### M1.3 acceptance
+
+- Provider Result can be intaken with one CLI command
+- intake performs canonical normalization automatically
+- canonical files land beneath the configured audio root
+- intake manifest is content-bound to the raw Provider Result
+- intake candidate hashes are verified before workspace commit
+- workspace Ledger uses audio-root-relative paths
+- workspace Ledger merges new candidate provenance
+- repeated identical intake is idempotent
+- intake ID collision with different input is rejected
+- audio catalog enriches intake candidates with Provider metadata
+- ordinary WAVs remain supported without intake metadata
+- Browser Board renders source/provider/intake context
+- Browser search includes prompt and Provider context
+- Browser Board detects new intake candidates without restart
+- manual catalog refresh remains available
+- Python tests and Browser JavaScript checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
