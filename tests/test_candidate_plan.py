@@ -252,6 +252,9 @@ def test_plan_preserves_human_hypothesis_and_preserve_constraints():
         "listening_for": brief[
             "human_input"
         ]["listening_for"],
+        "planned_change": brief[
+            "human_input"
+        ]["planned_change"],
         "preserve": [
             "source set",
             "layer count",
@@ -342,6 +345,32 @@ def test_candidate_plan_detects_tampered_readiness():
     with pytest.raises(
         CandidatePlanError,
         match="readiness",
+    ):
+        validate_candidate_plan(
+            plan
+        )
+
+
+def test_candidate_plan_rejects_semantic_change_tamper():
+    plan = compile_candidate_plan(
+        _brief()
+    )
+    plan["variants"][1][
+        "change"
+    ]["amount"] = 9
+
+    payload = dict(plan)
+    payload.pop("plan_id", None)
+    plan["plan_id"] = (
+        "plan:"
+        + _sha256_json(
+            payload
+        )[:20]
+    )
+
+    with pytest.raises(
+        CandidatePlanError,
+        match="must match",
     ):
         validate_candidate_plan(
             plan
