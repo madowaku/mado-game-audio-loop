@@ -119,11 +119,12 @@ def _source_index(board: CandidateBoard, audio_root: Path) -> dict[str, Any]:
     for source in sorted(source_names):
         path = _resolve_source(audio_root, source)
         metadata = read_wav_metadata(path)
+        sha256 = _sha256(path)
         sources.append(
             {
                 "relative_path": source,
-                "sha256": _sha256(path),
-                "source_id": source_id_for_hash(_sha256(path)),
+                "sha256": sha256,
+                "source_id": source_id_for_hash(sha256),
                 "bytes": path.stat().st_size,
                 "duration_ms": metadata.duration_ms,
                 "sample_rate": metadata.sample_rate,
@@ -250,6 +251,7 @@ def build_evidence_bundle(
         "evidence_bundle_version": "0.1",
         "base_recipe_id": board.base_recipe.id,
         "selected_candidate_id": selected.id,
+        "provenance_required": require_provenance,
         "file_count": len(manifest_files),
         "files": manifest_files,
     }
@@ -311,6 +313,10 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
             raise EvidenceBundleError(f"bundle file hash changed: {relative}")
         verified += 1
 
+    provenance_required = manifest.get("provenance_required", False)
+    if not isinstance(provenance_required, bool):
+        raise EvidenceBundleError("manifest.provenance_required must be boolean")
+
     provenance_result: dict[str, Any] | None = None
     provenance_path = bundle_dir / "provenance-ledger.json"
     if provenance_path.is_file():
@@ -334,6 +340,16 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
             raise EvidenceBundleError(
                 f"bundle provenance validation failed: {exc}"
             ) from exc
+
+    if provenance_required:
+        if provenance_result is None:
+            raise EvidenceBundleError(
+                "manifest requires provenance but provenance-ledger.json is missing"
+            )
+        if not provenance_result["complete"]:
+            raise EvidenceBundleError(
+                "manifest requires complete provenance metadata"
+            )
 
     actual_payloads = {
         path.relative_to(bundle_dir).as_posix()
