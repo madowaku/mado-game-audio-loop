@@ -58,6 +58,12 @@ from .release import build_release_pack, verify_release_pack
 from .render import render_recipe
 from .replay import replay_evidence_bundle
 from .server import serve
+from .variation_brief import (
+    create_variation_brief,
+    list_variation_briefs,
+    load_variation_brief,
+    validate_variation_brief,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -291,6 +297,37 @@ def build_parser() -> argparse.ArgumentParser:
         "--audio-root",
         required=True,
     )
+
+    variation_create = sub.add_parser(
+        "variation-brief-create",
+        help="Create a human-authored Variation Brief from a Delta Inspector Pack and input JSON",
+    )
+    variation_create.add_argument("inspector_pack")
+    variation_create.add_argument("input_json")
+    variation_create.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    variation_create.add_argument(
+        "--output",
+        "-o",
+        help="Optional copy of the created Variation Brief",
+    )
+
+    variation_list = sub.add_parser(
+        "variation-brief-list",
+        help="List saved Variation Briefs in an MGAL workspace",
+    )
+    variation_list.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    variation_validate = sub.add_parser(
+        "variation-brief-validate",
+        help="Validate one saved Variation Brief",
+    )
+    variation_validate.add_argument("brief")
 
     provenance_scan = sub.add_parser(
         "provenance-scan",
@@ -787,6 +824,70 @@ def main(argv: list[str] | None = None) -> int:
                 verify_delta_inspector_pack_against_current(
                     args.inspector_pack,
                     args.audio_root,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "variation-brief-create":
+        inspector = load_delta_inspector_pack(
+            args.inspector_pack
+        )
+        human_input = json.loads(
+            Path(args.input_json).read_text(
+                encoding="utf-8"
+            )
+        )
+        result = create_variation_brief(
+            args.audio_root,
+            inspector,
+            human_input,
+        )
+        if args.output:
+            output = Path(args.output).resolve()
+            output.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            output.write_text(
+                json.dumps(
+                    result["brief"],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "variation-brief-list":
+        print(
+            json.dumps(
+                list_variation_briefs(
+                    args.audio_root,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "variation-brief-validate":
+        print(
+            json.dumps(
+                validate_variation_brief(
+                    load_variation_brief(
+                        args.brief
+                    )
                 ),
                 ensure_ascii=False,
                 indent=2,
