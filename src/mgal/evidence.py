@@ -8,6 +8,10 @@ from typing import Any
 
 from .audio import read_wav_metadata
 from .candidate import CandidateBoard, CandidateSnapshot, load_candidate_board
+from .preference import (
+    PreferenceEvidenceError,
+    load_preference_evidence,
+)
 from .provenance import (
     ProvenanceLedgerError,
     source_id_for_hash,
@@ -158,6 +162,7 @@ def build_evidence_bundle(
     output_dir: str | Path,
     provenance_ledger_path: str | Path | None = None,
     require_provenance: bool = False,
+    preference_evidence_path: str | Path | None = None,
 ) -> Path:
     board_path = Path(board_path).resolve()
     audio_root = Path(audio_root).resolve()
@@ -171,6 +176,28 @@ def build_evidence_bundle(
         raise EvidenceBundleError(
             "require_provenance needs a provenance ledger"
         )
+
+    preference_evidence: dict[str, Any] | None = None
+    if preference_evidence_path is not None:
+        try:
+            preference_evidence = load_preference_evidence(
+                preference_evidence_path
+            )
+        except PreferenceEvidenceError as exc:
+            raise EvidenceBundleError(
+                f"preference evidence is invalid: {exc}"
+            ) from exc
+
+        applied_id = preference_evidence.get(
+            "applied_candidate_id"
+        )
+        if (
+            applied_id is not None
+            and applied_id != board.selected_candidate_id
+        ):
+            raise EvidenceBundleError(
+                "applied preference winner must match selected Candidate Board"
+            )
 
     provenance_subset: dict[str, Any] | None = None
     if provenance_ledger_path is not None:
@@ -206,6 +233,12 @@ def build_evidence_bundle(
         _write_json(
             output_dir / "provenance-ledger.json",
             provenance_subset,
+        )
+
+    if preference_evidence is not None:
+        _write_json(
+            output_dir / "preference-session.json",
+            preference_evidence,
         )
 
     for index, candidate in enumerate(board.candidates, start=1):
