@@ -132,6 +132,7 @@ def test_release_pack_uses_only_selected_recipe_sources(tmp_path: Path):
     assert (pack / "LICENSE_SUMMARY.json").is_file()
     assert (pack / "PROVENANCE_REPORT.json").is_file()
     assert (pack / "RECIPE.json").is_file()
+    assert (pack / "EVIDENCE_REF.json").is_file()
     assert (pack / "RELEASE_MANIFEST.json").is_file()
 
     attribution = (pack / "ATTRIBUTION.txt").read_text(encoding="utf-8")
@@ -210,3 +211,32 @@ def test_release_verify_detects_tampering(tmp_path: Path):
 
     with pytest.raises(ReleasePackError, match="changed"):
         verify_release_pack(pack)
+
+
+def test_release_pack_is_bound_to_evidence_manifest(tmp_path: Path):
+    bundle = _bundle(tmp_path)
+    pack = build_release_pack(bundle, tmp_path / "release")
+
+    evidence_ref = json.loads(
+        (pack / "EVIDENCE_REF.json").read_text(encoding="utf-8")
+    )
+    release_manifest = json.loads(
+        (pack / "RELEASE_MANIFEST.json").read_text(encoding="utf-8")
+    )
+
+    assert len(evidence_ref["evidence_manifest_sha256"]) == 64
+    assert (
+        evidence_ref["evidence_manifest_sha256"]
+        == release_manifest["evidence_manifest_sha256"]
+    )
+    assert len(evidence_ref["evidence_output_sha256"]) == 64
+
+
+def test_release_output_must_stay_outside_evidence_bundle(tmp_path: Path):
+    bundle = _bundle(tmp_path)
+
+    with pytest.raises(ReleasePackError, match="outside"):
+        build_release_pack(
+            bundle,
+            bundle / "release",
+        )
