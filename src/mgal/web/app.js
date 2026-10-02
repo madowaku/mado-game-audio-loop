@@ -24,6 +24,7 @@ const state = {
   deltaInspector: null,
   deltaInspectorStale: false,
   variationBriefs: [],
+  candidatePlans: [],
 };
 
 const list = document.querySelector("#audio-list");
@@ -119,6 +120,9 @@ const variationNote = document.querySelector("#variation-note");
 const variationPreserve = document.querySelector("#variation-preserve");
 const saveVariationBriefButton = document.querySelector("#save-variation-brief");
 const variationBriefList = document.querySelector("#variation-brief-list");
+const refreshCandidatePlansButton = document.querySelector("#refresh-candidate-plans");
+const candidatePlanEmpty = document.querySelector("#candidate-plan-empty");
+const candidatePlanList = document.querySelector("#candidate-plan-list");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -1603,9 +1607,175 @@ function renderVariationBriefs() {
     listen.textContent =
       "Listen for: " + brief.listening_for;
 
-    card.append(title, meta, listen);
+    const actions = document.createElement("div");
+    actions.className = "variation-brief-actions";
+    const existingPlan = state.candidatePlans.find(function (plan) {
+      return plan.variation_brief_id === brief.brief_id;
+    });
+    const compile = document.createElement("button");
+    compile.type = "button";
+    compile.className = "secondary compact";
+    if (existingPlan) {
+      compile.disabled = true;
+      compile.textContent = existingPlan.ready_for_materialization
+        ? "Plan ready"
+        : "Plan needs C input";
+    } else {
+      compile.textContent = "Compile plan";
+      compile.addEventListener("click", function () {
+        compileCandidatePlan(brief.brief_id, compile);
+      });
+    }
+    actions.appendChild(compile);
+
+    card.append(title, meta, listen, actions);
     variationBriefList.appendChild(card);
   });
+}
+
+function formatPlanChange(change) {
+  if (!change) return "no change";
+  let text =
+    change.dimension +
+    " · " +
+    change.action;
+  if (change.amount !== null && change.amount !== undefined) {
+    text +=
+      " · " +
+      String(change.amount) +
+      (change.unit ? " " + change.unit : "");
+  }
+  return text;
+}
+
+function renderCandidatePlans() {
+  candidatePlanList.replaceChildren();
+  candidatePlanEmpty.hidden =
+    state.candidatePlans.length > 0;
+
+  state.candidatePlans.slice().reverse().forEach(function (plan) {
+    const card = document.createElement("article");
+    card.className = "candidate-plan-card";
+
+    const title = document.createElement("strong");
+    title.textContent = plan.hypothesis;
+
+    const meta = document.createElement("span");
+    meta.textContent =
+      (plan.ready_for_materialization
+        ? "ready"
+        : "manual input required: " +
+          plan.unresolved_slots.join(", ")) +
+      " · " +
+      plan.variation_brief_id;
+
+    const listen = document.createElement("span");
+    listen.textContent =
+      "Listen for: " + plan.listening_for;
+
+    const variants = document.createElement("div");
+    variants.className = "candidate-plan-variants";
+    plan.variants.forEach(function (variant) {
+      const row = document.createElement("div");
+      row.className =
+        "candidate-plan-variant " +
+        (variant.resolution === "manual_required"
+          ? "manual-required"
+          : "");
+
+      const label = document.createElement("strong");
+      label.textContent =
+        variant.slot +
+        " · " +
+        variant.role;
+
+      const detail = document.createElement("span");
+      detail.textContent =
+        variant.resolution +
+        " · " +
+        formatPlanChange(variant.change);
+
+      row.append(label, detail);
+      variants.appendChild(row);
+    });
+
+    card.append(title, meta, listen, variants);
+    candidatePlanList.appendChild(card);
+  });
+}
+
+async function refreshCandidatePlans() {
+  try {
+    const response = await fetch(
+      "/api/candidate-plans",
+      { cache: "no-store" }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not load Candidate Plans"
+      );
+    }
+    state.candidatePlans = result.filter(function (item) {
+      return item.ok !== false;
+    });
+    renderCandidatePlans();
+    renderVariationBriefs();
+  } catch (error) {
+    status.textContent =
+      "Candidate Plan list failed: " + error.message;
+  }
+}
+
+async function compileCandidatePlan(briefId, button) {
+  button.disabled = true;
+  button.textContent = "Compiling…";
+
+  try {
+    const response = await fetch(
+      "/api/candidate-plans",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          brief_id: briefId,
+        }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not compile Candidate Plan"
+      );
+    }
+    if (
+      !result.plan ||
+      !result.plan.authority ||
+      result.plan.authority.recipe_materialization !== "none" ||
+      result.plan.authority.candidate_generation !== "none" ||
+      result.plan.authority.candidate_selection !== "none"
+    ) {
+      throw new Error(
+        "Candidate Plan authority boundary is invalid"
+      );
+    }
+
+    await refreshCandidatePlans();
+    status.textContent =
+      "Candidate Plan compiled · " +
+      result.plan.plan_id +
+      (result.plan.ready_for_materialization
+        ? " · A/B/C resolved"
+        : " · manual input required for " +
+          result.plan.unresolved_slots.join(", "));
+  } catch (error) {
+    status.textContent =
+      "Candidate Plan failed: " + error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function refreshVariationBriefs() {
@@ -2761,6 +2931,7 @@ refreshPreferenceArchiveButton.addEventListener("click", function () {
 refreshDecisionMemoryButton.addEventListener("click", function () {
   refreshDecisionMemory({ quiet: false });
 });
+refreshCandidatePlansButton.addEventListener("click", refreshCandidatePlans);
 loadDecisionContextButton.addEventListener("click", loadDecisionContext);
 downloadDecisionContextButton.addEventListener("click", downloadDecisionContext);
 inspectCurrentDeltasButton.addEventListener("click", inspectCurrentDeltas);
@@ -2998,6 +3169,7 @@ async function boot() {
   await refreshCatalog({ quiet: false });
   await refreshPreferenceArchive({ quiet: true });
   await refreshDecisionMemory({ quiet: true });
+  await refreshCandidatePlans();
   await refreshVariationBriefs();
   updateAuditionControls();
   renderRecipe();
