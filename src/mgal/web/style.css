@@ -415,6 +415,15 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   font-size: .76rem;
 }
 
+.candidate-sources {
+  overflow: hidden;
+  color: #9da493;
+  font-size: .72rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .candidate-reason {
   min-height: 58px;
   resize: vertical;
