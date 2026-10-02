@@ -1769,6 +1769,8 @@ function renderDeltaInspector() {
 
   if (!inspector) {
     deltaInspectorPanel.hidden = true;
+    renderVariationReferenceOptions();
+    updateVariationBriefControls();
     updateDeltaInspectorControls();
     return;
   }
