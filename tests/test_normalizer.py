@@ -16,7 +16,11 @@ from mgal.provider import (
     SourceRequest,
     validate_provider_result,
     write_provider_provenance_ledger,
+    write_provider_result,
+    load_provider_result,
 )
+from mgal.recipe import load_recipe
+from mgal.render import render_recipe
 from mgal.provenance import validate_provenance_ledger, source_sha256
 
 
@@ -228,3 +232,150 @@ def test_normalizer_rejects_same_input_and_output_root(tmp_path: Path):
 
     with pytest.raises(AudioNormalizationError, match="must differ"):
         normalize_provider_result(result, source_root)
+
+
+def test_saved_provider_result_can_be_loaded_and_normalized(tmp_path: Path):
+    source_root = tmp_path / "source"
+    source = source_root / "stereo.wav"
+    _write_pcm_wav(
+        source,
+        sample_rate=48_000,
+        channels=2,
+        sample_width=2,
+        frames=[(1000, 3000), (-1000, 1000)] * 100,
+    )
+
+    provider = LocalFileProvider(source_root)
+    result = provider.provide(
+        SourceRequest(
+            request_id="saved",
+            intent="saved",
+            count=1,
+        )
+    )
+    result_path = write_provider_result(
+        result,
+        tmp_path / "provider-result.json",
+    )
+
+    loaded = load_provider_result(result_path)
+    normalized = normalize_provider_result(
+        loaded,
+        tmp_path / "canonical",
+    )
+
+    assert normalized.candidates[0].sample_rate == CANONICAL_SAMPLE_RATE
+    assert normalized.candidates[0].channels == 1
+
+
+def test_normalized_mixed_formats_render_in_one_recipe(tmp_path: Path):
+    source_root = tmp_path / "source"
+    _write_pcm_wav(
+        source_root / "stereo-48k.wav",
+        sample_rate=48_000,
+        channels=2,
+        sample_width=2,
+        frames=[(1200, -400), (600, 200)] * 240,
+    )
+    _write_pcm_wav(
+        source_root / "mono-8k.wav",
+        sample_rate=8_000,
+        channels=1,
+        sample_width=2,
+        frames=[(900,), (-900,)] * 80,
+    )
+
+    provider = LocalFileProvider(source_root)
+    result = provider.provide(
+        SourceRequest(
+            request_id="mixed",
+            intent="mixed",
+            count=2,
+        )
+    )
+    normalized = normalize_provider_result(
+        result,
+        tmp_path / "canonical",
+    )
+
+    recipe_payload = {
+        "recipe_version": "0.1",
+        "id": "normalized-mix",
+        "intent": "mixed normalized provider audio",
+        "layers": [
+            {
+                "source": candidate.relative_path,
+                "gain": 0.5,
+                "offset_ms": index * 10,
+            }
+            for index, candidate in enumerate(normalized.candidates)
+        ],
+        "processing": {
+            "normalize": True,
+            "fade_out_ms": 0,
+        },
+    }
+    recipe_path = tmp_path / "recipe.json"
+    recipe_path.write_text(
+        json.dumps(recipe_payload),
+        encoding="utf-8",
+    )
+
+    recipe = load_recipe(recipe_path)
+    output = render_recipe(
+        recipe,
+        recipe_path,
+        tmp_path / "output.wav",
+        source_root=Path(normalized.artifact_root),
+    )
+
+    with wave.open(str(output), "rb") as wav:
+        assert wav.getframerate() == CANONICAL_SAMPLE_RATE
+        assert wav.getnchannels() == 1
+        assert wav.getsampwidth() == 2
+
+
+def test_normalization_lineage_validation_rejects_wrong_normalized_hash(
+    tmp_path: Path,
+):
+    source_root = tmp_path / "source"
+    source = source_root / "mono.wav"
+    _write_pcm_wav(
+        source,
+        sample_rate=8_000,
+        channels=1,
+        sample_width=2,
+        frames=[(100,), (-100,)] * 20,
+    )
+
+    provider = LocalFileProvider(source_root)
+    result = provider.provide(
+        SourceRequest(
+            request_id="lineage",
+            intent="lineage",
+            count=1,
+        )
+    )
+    normalized = normalize_provider_result(
+        result,
+        tmp_path / "canonical",
+    )
+
+    broken = json.loads(
+        json.dumps(normalized.candidates[0].provenance)
+    )
+    broken["normalization"]["normalized"]["sha256"] = "0" * 64
+
+    ledger = {
+        "provenance_ledger_version": "0.1",
+        "entry_count": 1,
+        "entries": [broken],
+    }
+    ledger_path = tmp_path / "broken-ledger.json"
+    ledger_path.write_text(
+        json.dumps(ledger),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="normalization.normalized"):
+        validate_provenance_ledger(ledger_path)
