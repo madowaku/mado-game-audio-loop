@@ -54,6 +54,13 @@ def test_candidate_board_static_contract():
         "decision-context-stale",
         "decision-context-empty",
         "decision-context-list",
+        "inspect-current-deltas",
+        "download-delta-inspector",
+        "delta-inspector-panel",
+        "delta-inspector-count",
+        "delta-inspector-summary",
+        "delta-inspector-stale",
+        "delta-inspector-list",
     ):
         assert f'id="{element_id}"' in html
 
@@ -134,6 +141,15 @@ def test_candidate_board_static_contract():
         "/api/decision-context",
         "reference_only",
         "selection_effect",
+        "inspectCurrentDeltas",
+        "renderDeltaInspector",
+        "markDeltaInspectorStale",
+        "downloadDeltaInspector",
+        "/api/decision-context-inspect",
+        "observation_only",
+        "mutation_effect",
+        "Current − past winner",
+        "Current − past loser",
     ):
         assert token in js
 
@@ -416,3 +432,38 @@ def test_decision_context_reference_only_ui_contract():
     assert ".decision-context-panel" in css
     assert ".decision-context-row" in css
     assert ".decision-context-stale" in css
+
+
+def test_delta_inspector_observation_only_ui_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "Inspect current deltas" in html
+    assert "Download delta inspector" in html
+    assert "CURRENT RECIPE · OBSERVATION ONLY" in html
+    assert "No closeness score, ranking, or automatic Recipe change" in html
+    assert "Current Recipe or Context changed." in html
+
+    assert '"/api/decision-context-inspect"' in js
+    assert "current_recipe: recipePayload()" in js
+    assert 'result.usage.role !== "observation_only"' in js
+    assert 'result.usage.selection_effect !== "none"' in js
+    assert 'result.usage.mutation_effect !== "none"' in js
+    assert "current_only_source_count" in js
+    assert "reference_only_source_count" in js
+    assert "state.deltaInspectorStale" in js
+    assert "markDeltaInspectorStale()" in js
+
+    inspector_start = js.index("function renderDeltaInspector()")
+    inspector_end = js.index("function markDeltaInspectorStale", inspector_start)
+    inspector_code = js[inspector_start:inspector_end]
+    assert "setCandidateDecision" not in inspector_code
+    assert "copyActiveInto" not in inspector_code
+    assert "applyPreferenceWinner" not in inspector_code
+    assert "similarity" not in inspector_code.lower()
+    assert "closer" not in inspector_code.lower()
+
+    assert ".delta-inspector-panel" in css
+    assert ".delta-inspector-card" in css
+    assert ".delta-inspector-reference" in css
