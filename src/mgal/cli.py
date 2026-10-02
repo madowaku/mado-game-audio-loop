@@ -20,6 +20,7 @@ from .provider import (
     write_provider_provenance_ledger,
     write_provider_result,
 )
+from .providers.stability import StabilityAudioProvider
 from .recipe import load_recipe
 from .recovery import recover_sources, write_relink_map
 from .release import build_release_pack, verify_release_pack
@@ -144,18 +145,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     source_provide.add_argument(
         "--provider",
-        choices=("local", "fixture-generated"),
+        choices=("local", "fixture-generated", "stability"),
         required=True,
     )
     source_provide.add_argument("--request-id", required=True)
     source_provide.add_argument("--intent", required=True)
-    source_provide.add_argument("--count", type=int, default=4)
+    source_provide.add_argument("--count", type=int)
     source_provide.add_argument("--hint", action="append", default=[])
     source_provide.add_argument("--duration-ms", type=int)
     source_provide.add_argument("--seed")
     source_provide.add_argument("--audio-root")
     source_provide.add_argument("--provenance-ledger")
     source_provide.add_argument("--artifact-root")
+    source_provide.add_argument(
+        "--allow-paid",
+        action="store_true",
+        help="Explicitly allow a paid provider request",
+    )
+    source_provide.add_argument(
+        "--api-key-env",
+        default="STABILITY_API_KEY",
+        help="Environment variable containing provider API key",
+    )
+    source_provide.add_argument("--steps", type=int, default=8)
+    source_provide.add_argument("--cfg-scale", type=float, default=1.0)
+    source_provide.add_argument(
+        "--poll-interval",
+        type=float,
+        default=10.0,
+    )
+    source_provide.add_argument(
+        "--max-wait",
+        type=float,
+        default=300.0,
+    )
     source_provide.add_argument("--output", "-o")
     source_provide.add_argument("--provenance-output")
 
@@ -165,12 +188,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     provider_describe.add_argument(
         "--provider",
-        choices=("local", "fixture-generated"),
+        choices=("local", "fixture-generated", "stability"),
         required=True,
     )
     provider_describe.add_argument("--audio-root")
     provider_describe.add_argument("--provenance-ledger")
     provider_describe.add_argument("--artifact-root")
+    provider_describe.add_argument(
+        "--api-key-env",
+        default="STABILITY_API_KEY",
+    )
 
     recover = sub.add_parser(
         "recover-sources",
@@ -329,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.audio_root,
                 getattr(args, "provenance_ledger", None),
             )
-        else:
+        elif args.provider == "fixture-generated":
             artifact_root = getattr(args, "artifact_root", None)
             if not artifact_root:
                 parser = build_parser()
@@ -337,6 +364,29 @@ def main(argv: list[str] | None = None) -> int:
                     "--artifact-root is required for provider=fixture-generated"
                 )
             provider = FixtureGeneratedProvider(artifact_root)
+        else:
+            artifact_root = getattr(args, "artifact_root", None) or "."
+            provider = StabilityAudioProvider(
+                artifact_root,
+                allow_paid=getattr(args, "allow_paid", False),
+                api_key_env=getattr(
+                    args,
+                    "api_key_env",
+                    "STABILITY_API_KEY",
+                ),
+                steps=getattr(args, "steps", 8),
+                cfg_scale=getattr(args, "cfg_scale", 1.0),
+                poll_interval_seconds=getattr(
+                    args,
+                    "poll_interval",
+                    10.0,
+                ),
+                max_wait_seconds=getattr(
+                    args,
+                    "max_wait",
+                    300.0,
+                ),
+            )
 
         if args.command == "provider-describe":
             print(
@@ -348,10 +398,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        count = args.count
+        if count is None:
+            count = 1 if args.provider == "stability" else 4
+
         request = SourceRequest(
             request_id=args.request_id,
             intent=args.intent,
-            count=args.count,
+            count=count,
             hints=tuple(args.hint),
             duration_ms=args.duration_ms,
             seed=args.seed,
