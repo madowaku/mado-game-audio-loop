@@ -87,3 +87,16 @@ def test_server_exposes_preference_evidence_post_contract():
     assert '"/api/preference-evidence"' in source
     assert "compile_preference_evidence" in source
     assert "2_000_000" in source
+
+
+def test_server_exposes_preference_archive_replay_contract():
+    from mgal import server as server_module
+
+    source = Path(server_module.__file__).read_text(encoding="utf-8")
+    assert '"/api/preference-archive"' in source
+    assert 'parsed.path == "/api/preferences"' in source
+    assert 'parsed.path.startswith("/api/preferences/")' in source
+    assert 'parsed.path.endswith("/replay")' in source
+    assert "archive_preference_evidence" in source
+    assert "list_preference_archives" in source
+    assert "replay_preference_archive" in source
