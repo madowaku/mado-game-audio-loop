@@ -1497,6 +1497,133 @@ Manual layered-mix `Fork A/B/C` remains unchanged.
 - manual Fork A/B/C workflow remains available
 - Python tests and Browser JavaScript checks remain green
 
+### MGAL-M1.5 Blind / Sequential Audition
+
+Goal:
+
+**Reduce visual/provider bias during Candidate comparison and make A/B/C decisions possible with minimal pointer interaction.**
+
+Audition-only state:
+
+```text
+blindMode
+sequenceRunning
+sequenceIndex
+sequenceTimer
+playbackToken
+```
+
+None of these fields enter Candidate Board JSON.
+
+#### Blind mode
+
+Blind mode preserves Candidate labels and decision controls while hiding:
+
+- source filename/path
+- Provider/intake badges
+- prompt/intent context
+- Candidate source summary
+- Candidate lineage metadata
+- structural delta text
+- mixer layer names
+- intake session metadata
+
+Blind mode is Browser UI state only.
+
+#### Sequential audition
+
+```text
+A
+ ↓ playback complete
+350 ms
+ ↓
+B
+ ↓ playback complete
+350 ms
+ ↓
+C
+ ↓
+stop
+```
+
+Sequence behavior:
+
+- always starts from the first Candidate
+- plays each Candidate once
+- does not loop
+- waits for all Candidate layers to finish
+- manual Candidate preview cancels sequence
+- previous/next navigation cancels sequence
+- Stop/Escape cancels sequence
+- stale completion callbacks are ignored through playback-token invalidation
+
+#### Navigation controls
+
+Browser controls:
+
+```text
+Blind: On/Off
+A→B→C sequence
+Previous Candidate
+Next Candidate
+active position indicator
+```
+
+Previous/next navigation activates and previews the target Candidate.
+
+#### Keyboard contract
+
+Outside editable controls:
+
+```text
+Space       preview/replay active Candidate
+ArrowLeft   previous Candidate + preview
+ArrowRight  next Candidate + preview
+F           toggle favorite
+X           toggle reject
+S           toggle selected
+B           toggle blind mode
+Q           start/stop sequence
+Escape      stop audition
+```
+
+Keyboard handling ignores events originating inside input, textarea, select, or contenteditable elements, and ignores Ctrl/Cmd/Alt modified shortcuts.
+
+Decision shortcuts call the same Candidate decision function used by UI buttons.
+
+#### Persistence boundary
+
+Candidate Board serialization remains version 0.1.
+
+The following are intentionally absent from board payloads:
+
+- blind mode
+- sequence state
+- playback index
+- keyboard state
+- timing state
+
+Only durable human decisions remain persisted.
+
+#### M1.5 acceptance
+
+- Blind mode can be toggled only when Candidates exist
+- Blind mode hides source/provider/prompt/lineage context
+- Candidate A/B/C labels remain visible
+- Blind mode does not modify Board/Recipe persistence
+- sequential audition plays Candidates in A/B/C order
+- sequence stops after the final Candidate
+- layered Candidate completion waits for all voices
+- manual preview cancels sequence
+- previous/next navigation previews the target Candidate
+- playback token prevents stale completion callbacks from advancing a newer session
+- keyboard shortcuts implement preview/navigation/decision/blind/sequence/stop
+- typing in form controls does not trigger audition shortcuts
+- keyboard decisions reuse favorite/reject/selected logic
+- Clear board resets Blind/Sequential state
+- Intake-seeded and manually-forked Boards use the same audition controls
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
