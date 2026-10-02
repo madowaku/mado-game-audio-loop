@@ -237,3 +237,69 @@ def test_provider_intake_cli_registers_candidates_in_audio_workspace(
     assert payload["candidate_count"] == 2
     assert len(list((audio_root / "incoming" / "slash-run").glob("*.wav"))) == 2
     assert (audio_root / ".mgal" / "provenance-ledger.json").is_file()
+
+
+def test_intake_seed_board_cli_writes_valid_candidate_board(
+    tmp_path: Path,
+    capsys,
+):
+    raw_root = tmp_path / "raw-seed"
+    raw_result = tmp_path / "raw-seed-result.json"
+
+    code = main(
+        [
+            "source-provide",
+            "--provider",
+            "fixture-generated",
+            "--artifact-root",
+            str(raw_root),
+            "--request-id",
+            "impact-seed",
+            "--intent",
+            "three impact options",
+            "--count",
+            "3",
+            "--output",
+            str(raw_result),
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    audio_root = tmp_path / "audio-seed"
+    code = main(
+        [
+            "provider-intake",
+            str(raw_result),
+            "--audio-root",
+            str(audio_root),
+            "--intake-id",
+            "impact-seed-run",
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    board_path = tmp_path / "seed-board.json"
+    code = main(
+        [
+            "intake-seed-board",
+            "--audio-root",
+            str(audio_root),
+            "--intake-id",
+            "impact-seed-run",
+            "--output",
+            str(board_path),
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(board_path.read_text(encoding="utf-8"))
+    assert payload["candidate_board_version"] == "0.1"
+    assert [item["label"] for item in payload["candidates"]] == [
+        "A",
+        "B",
+        "C",
+    ]
+    assert payload["selected_candidate_id"] is None
+    assert str(board_path) in capsys.readouterr().out
