@@ -13,8 +13,12 @@ from .preference import (
     PreferenceEvidenceError,
     archive_preference_evidence,
     compile_preference_evidence,
-    list_preference_archives,
-    replay_preference_archive,
+)
+from .preference_recovery import (
+    PreferenceRecoveryError,
+    list_portable_preference_archives,
+    replay_preference_archive_portable,
+    write_preference_relink_map,
 )
 from .intake import (
     ProviderIntakeError,
@@ -92,7 +96,7 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
 
             if parsed.path == "/api/preferences":
                 self._send_json(
-                    list_preference_archives(root)
+                    list_portable_preference_archives(root)
                 )
                 return
 
@@ -105,11 +109,14 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 ].strip("/")
                 archive_id = unquote(encoded_id)
                 try:
-                    payload = replay_preference_archive(
+                    payload = replay_preference_archive_portable(
                         root,
                         archive_id,
                     )
-                except PreferenceEvidenceError as exc:
+                except (
+                    PreferenceEvidenceError,
+                    PreferenceRecoveryError,
+                ) as exc:
                     self._send_json_error(
                         HTTPStatus.BAD_REQUEST,
                         str(exc),
@@ -165,6 +172,51 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+
+            if (
+                parsed.path.startswith("/api/preferences/")
+                and parsed.path.endswith("/recover")
+            ):
+                encoded_id = parsed.path[
+                    len("/api/preferences/") : -len("/recover")
+                ].strip("/")
+                archive_id = unquote(encoded_id)
+                try:
+                    output = write_preference_relink_map(
+                        root,
+                        archive_id,
+                        root,
+                    )
+                    replay = replay_preference_archive_portable(
+                        root,
+                        archive_id,
+                    )
+                except (
+                    PreferenceEvidenceError,
+                    PreferenceRecoveryError,
+                    OSError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(
+                    {
+                        "ok": True,
+                        "archive_id": archive_id,
+                        "relink_map": str(output),
+                        "source_status": replay[
+                            "source_status"
+                        ],
+                        "source_resolution": replay[
+                            "source_resolution"
+                        ],
+                    }
+                )
+                return
+
             if parsed.path not in {
                 "/api/preference-evidence",
                 "/api/preference-archive",
