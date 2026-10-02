@@ -387,6 +387,38 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
                 "manifest requires complete provenance metadata"
             )
 
+    preference_result: dict[str, Any] | None = None
+    preference_path = bundle_dir / "preference-session.json"
+    if preference_path.is_file():
+        try:
+            preference_data = load_preference_evidence(
+                preference_path
+            )
+        except PreferenceEvidenceError as exc:
+            raise EvidenceBundleError(
+                f"bundle preference validation failed: {exc}"
+            ) from exc
+
+        applied_id = preference_data.get(
+            "applied_candidate_id"
+        )
+        if (
+            applied_id is not None
+            and applied_id != manifest.get("selected_candidate_id")
+        ):
+            raise EvidenceBundleError(
+                "bundle preference applied winner does not match selected candidate"
+            )
+        preference_result = {
+            "candidates": len(preference_data["mapping"]),
+            "pairs": len(preference_data["pairs"]),
+            "winner_candidate_id": preference_data[
+                "winner_candidate_id"
+            ],
+            "tie": preference_data["tie"],
+            "applied_candidate_id": applied_id,
+        }
+
     actual_payloads = {
         path.relative_to(bundle_dir).as_posix()
         for path in bundle_dir.rglob("*")
@@ -409,4 +441,5 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
         "files_verified": verified,
         "selected_candidate_id": manifest.get("selected_candidate_id"),
         "provenance": provenance_result,
+        "preference": preference_result,
     }
