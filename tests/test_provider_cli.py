@@ -189,3 +189,51 @@ def test_provider_normalize_cli_round_trip(tmp_path: Path, capsys):
 
     stdout = json.loads(capsys.readouterr().out)
     assert stdout["candidate_count"] == 2
+
+
+def test_provider_intake_cli_registers_candidates_in_audio_workspace(
+    tmp_path: Path,
+    capsys,
+):
+    raw_root = tmp_path / "raw"
+    raw_result = tmp_path / "raw-result.json"
+
+    code = main(
+        [
+            "source-provide",
+            "--provider",
+            "fixture-generated",
+            "--artifact-root",
+            str(raw_root),
+            "--request-id",
+            "slash",
+            "--intent",
+            "short slash",
+            "--count",
+            "2",
+            "--output",
+            str(raw_result),
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    audio_root = tmp_path / "audio"
+    code = main(
+        [
+            "provider-intake",
+            str(raw_result),
+            "--audio-root",
+            str(audio_root),
+            "--intake-id",
+            "slash-run",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["intake_id"] == "slash-run"
+    assert payload["candidate_count"] == 2
+    assert len(list((audio_root / "incoming" / "slash-run").glob("*.wav"))) == 2
+    assert (audio_root / ".mgal" / "provenance-ledger.json").is_file()
