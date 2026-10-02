@@ -698,15 +698,35 @@ def _candidate_recipe_payloads(
 def _replay_preference_data(
     data: dict[str, Any],
     audio_root: str | Path,
+    *,
+    source_overrides: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
     validate_preference_evidence(data)
     audio_root_path = Path(audio_root).resolve()
 
     source_index = data["source_index"]
     source_lookup: dict[str, dict[str, Any]] = {}
+    resolved_sources: dict[str, str] = {}
     for item in source_index["sources"]:
         relative = item["relative_path"]
-        path = _resolve_source(audio_root_path, relative)
+        if source_overrides is not None and relative in source_overrides:
+            path = source_overrides[relative].resolve()
+            try:
+                target_relative = path.relative_to(
+                    audio_root_path
+                ).as_posix()
+            except ValueError as exc:
+                raise PreferenceEvidenceError(
+                    f"preference replay override escapes source root: {relative}"
+                ) from exc
+        else:
+            path = _resolve_source(audio_root_path, relative)
+            target_relative = relative
+
+        if not path.is_file():
+            raise PreferenceEvidenceError(
+                f"preference replay source is missing: {relative}"
+            )
         if path.stat().st_size != item["bytes"]:
             raise PreferenceEvidenceError(
                 f"preference replay source byte size changed: {relative}"
@@ -716,6 +736,7 @@ def _replay_preference_data(
                 f"preference replay source hash changed: {relative}"
             )
         source_lookup[relative] = item
+        resolved_sources[relative] = target_relative
 
     board_data = data["candidate_board"]
     candidate_ids = {
@@ -728,6 +749,21 @@ def _replay_preference_data(
     )
     recipes_by_candidate = _candidate_recipe_payloads(board_data)
 
+    def resolved_recipe(candidate_id: str) -> dict[str, Any]:
+        recipe = json.loads(
+            json.dumps(
+                recipes_by_candidate[candidate_id],
+                ensure_ascii=False,
+            )
+        )
+        for layer in recipe.get("layers", []):
+            if not isinstance(layer, dict):
+                continue
+            source = layer.get("source")
+            if isinstance(source, str) and source in resolved_sources:
+                layer["source"] = resolved_sources[source]
+        return recipe
+
     replay_pairs: list[dict[str, Any]] = []
     for pair in data["pairs"]:
         vote = data["votes"][pair["index"]]
@@ -739,11 +775,11 @@ def _replay_preference_data(
                 "left_alias": pair["left_alias"],
                 "left_candidate_id": left_id,
                 "left_sources": sources_by_candidate[left_id],
-                "left_recipe": recipes_by_candidate[left_id],
+                "left_recipe": resolved_recipe(left_id),
                 "right_alias": pair["right_alias"],
                 "right_candidate_id": right_id,
                 "right_sources": sources_by_candidate[right_id],
-                "right_recipe": recipes_by_candidate[right_id],
+                "right_recipe": resolved_recipe(right_id),
                 "winner_alias": vote["winner_alias"],
                 "winner_candidate_id": vote["winner_candidate_id"],
             }
@@ -758,6 +794,14 @@ def _replay_preference_data(
             "candidate_board_sha256"
         ],
         "sources_verified": len(source_lookup),
+        "source_resolution": [
+            {
+                "source": source,
+                "target": resolved_sources[source],
+                "relinked": resolved_sources[source] != source,
+            }
+            for source in sorted(resolved_sources)
+        ],
         "mapping": data["mapping"],
         "replay_pairs": replay_pairs,
         "winner_candidate_id": data["winner_candidate_id"],
@@ -914,10 +958,10 @@ def _resolve_archive_session(
     return session_dir
 
 
-def verify_preference_archive(
+def load_preference_archive_metadata(
     audio_root: str | Path,
     archive_id: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     session_dir = _resolve_archive_session(
         audio_root,
         archive_id,
@@ -961,6 +1005,17 @@ def verify_preference_archive(
         raise PreferenceEvidenceError(
             "preference archive board hash mismatch"
         )
+    return manifest, evidence
+
+
+def verify_preference_archive(
+    audio_root: str | Path,
+    archive_id: str,
+) -> dict[str, Any]:
+    manifest, evidence = load_preference_archive_metadata(
+        audio_root,
+        archive_id,
+    )
 
     replay = _replay_preference_data(
         evidence,
@@ -1022,17 +1077,15 @@ def load_preference_archive(
     audio_root: str | Path,
     archive_id: str,
 ) -> dict[str, Any]:
-    verify_preference_archive(
+    _, evidence = load_preference_archive_metadata(
         audio_root,
         archive_id,
     )
-    session_dir = _resolve_archive_session(
+    _replay_preference_data(
+        evidence,
         audio_root,
-        archive_id,
     )
-    return load_preference_evidence(
-        session_dir / "evidence.json"
-    )
+    return evidence
 
 
 def replay_preference_archive(
