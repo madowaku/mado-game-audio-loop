@@ -77,6 +77,14 @@
           </div>
         </div>
 
+        <div class="audition-toolbar">
+          <button id="blind-mode" class="secondary compact" type="button" disabled>Blind: Off</button>
+          <button id="sequence-candidates" class="secondary compact" type="button" disabled>▶ A→B→C</button>
+          <button id="previous-candidate" class="secondary compact" type="button" disabled>← Prev</button>
+          <button id="next-candidate" class="secondary compact" type="button" disabled>Next →</button>
+          <span id="audition-position" class="audition-position">No candidates</span>
+        </div>
+        <p id="audition-shortcuts" class="audition-shortcuts">Space replay · ←/→ move · F favorite · X reject · S select · B blind · Q sequence · Esc stop</p>
         <p id="candidate-help" class="hint">Build a mix, then fork it into three candidates for rapid comparison.</p>
         <div id="candidate-board" class="candidate-board"></div>
         <button id="download-board" class="secondary full-width" type="button" disabled>Download board JSON</button>
