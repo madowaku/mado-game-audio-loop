@@ -160,6 +160,19 @@
           <button id="save-variation-brief" class="secondary compact" type="button" disabled>Save Variation Brief</button>
           <p class="hint">This stores a human-authored experiment plan only. It does not generate or mutate a Recipe.</p>
           <div id="variation-brief-list" class="variation-brief-list"></div>
+
+          <div class="candidate-plan-shelf">
+            <div class="candidate-plan-head">
+              <div>
+                <p class="eyebrow">CANDIDATE PLAN</p>
+                <h3>Control / Hypothesis / Contrast</h3>
+              </div>
+              <button id="refresh-candidate-plans" class="secondary compact" type="button">↻ Refresh</button>
+            </div>
+            <p id="candidate-plan-empty" class="hint">No Candidate Plans yet. Compile one from a saved Variation Brief.</p>
+            <div id="candidate-plan-list" class="candidate-plan-list"></div>
+            <p class="hint">Plans describe experiments only. They do not contain materialized Recipes or select Candidates.</p>
+          </div>
         </section>
 
         <p class="hint">Context is reference-only. It does not rank, copy, select, or apply any Candidate.</p>
