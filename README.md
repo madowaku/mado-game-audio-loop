@@ -2,41 +2,61 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → blind preference → archive → decision memory → retrieve context → create again**
+**provide → audition → remember → retrieve context → inspect current deltas → decide again**
 
-## Current milestone: M2.1 Decision Memory Retrieval / Context Pack
+## Current milestone: M2.2 Current Recipe / Decision Context Delta Inspector
 
-M2.1 makes explicitly promoted Decision Memory useful during a new sound-design task without turning memory into an automatic recommender.
+M2.2 compares the Recipe being edited now with the past winner and loser Recipes returned by an M2.1 Decision Context Pack.
 
-The flow is:
+The boundary remains observational:
 
 ```text
-Current intent
-     ↓ explicit retrieval
-Decision Memory
-     ↓ deterministic intent match
-Context Pack
-     ↓ reference only
-creator listens / edits / decides
+Current Recipe
+      +
+Decision Context Pack
+      ↓
+Delta Inspector
+      ↓
+facts about differences
+      ↓
+creator decides what they mean
 ```
 
-The Context Pack can inform the creator. It cannot choose, rank, copy, select, or apply a Candidate.
+MGAL does not compute which past Recipe the current sound is "closer to", does not rank Candidates, and does not mutate the current Recipe.
 
-## Context Pack 0.1
+## Why this exists
 
-Top-level fields:
+M2.1 can answer:
+
+> Which past blind-listening observations are relevant to this intent?
+
+M2.2 adds:
+
+> How is what I am making now structurally different from those past winner and loser Recipes?
+
+For every returned observation MGAL shows two neutral comparisons:
 
 ```text
-decision_context_pack_version = 0.1
+Current − Past winner
+Current − Past loser
+```
+
+The direction is always explicit.
+
+## Delta Inspector Pack 0.1
+
+A saved Inspector Pack contains:
+
+```text
+delta_inspector_version = 0.1
+delta_inspector_id
 context_pack_id
-retrieval_strategy
 decision_memory_sha256
 query
-memory_snapshot
-matched_entry_count
-returned_entry_count
-truncated
-observations[]
+current_recipe_document
+current_recipe
+inspection_count
+inspections[]
 usage
 ```
 
@@ -45,291 +65,282 @@ Authority boundary:
 ```json
 {
   "usage": {
-    "role": "reference_only",
-    "selection_effect": "none"
+    "role": "observation_only",
+    "selection_effect": "none",
+    "mutation_effect": "none"
   }
 }
 ```
 
-Both Python validation and the Browser UI enforce this boundary.
+Python validation and the Browser both enforce this boundary.
 
-## Deterministic retrieval strategy
+## Current Recipe summary
 
-Current strategy:
-
-```text
-intent-token-overlap-v1
-```
-
-The query and each promoted observation's source intent are normalized with Unicode NFKC and case folding.
-
-Retrieval terms include:
-
-- Unicode word tokens with length >= 2
-- a small English stop-word exclusion
-- CJK contiguous runs
-- CJK 2-grams for Japanese/Chinese/Korean intents
-
-Examples:
+The current Recipe is validated with the normal MGAL Recipe contract and summarized as:
 
 ```text
-query:
-metallic sword impact
-
-memory:
-crisp metallic sword impact
-
-matched:
-metallic
-sword
-impact
+recipe_id
+recipe_sha256
+intent
+layer_count
+total_gain
+earliest_offset_ms
+latest_offset_ms
+normalize
+fade_out_ms
+source_ids[]
 ```
 
-Japanese intent fragments also remain searchable through CJK 2-gram overlap.
+Current source files are hashed from the active audio root.
 
-## What match values mean
-
-Context observations record:
+Source identity is content-based:
 
 ```text
-exact_intent
-matched_terms[]
-match_count
-query_term_count
-source_term_count
+sha256:<content hash>
 ```
 
-These are retrieval metadata only.
+So source overlap is based on identical bytes, not matching filenames.
 
-They are **not**:
+## Neutral delta fields
+
+For each past reference Recipe:
 
 ```text
-Candidate quality
-preference strength
-confidence
-taste score
-recommendation score
+direction = current_minus_reference
+layer_count_delta
+total_gain_delta
+earliest_offset_ms_delta
+latest_offset_ms_delta
+fade_out_ms_delta
+normalize_changed
+shared_source_count
+current_only_source_count
+reference_only_source_count
 ```
 
-The retrieval order is deterministic:
-
-1. exact intent first
-2. more matched terms first
-3. source intent
-4. archive ID
-5. pair index
-6. entry ID
-
-No randomness is used.
-
-## Zero-match behavior
-
-MGAL does not fill an empty result with unrelated memories.
+Example:
 
 ```text
-query: underwater bubble
+Current − past winner B
 
-Decision Memory:
-- crisp metallic sword impact
-- soft wooden UI tap
+Δ layers          +1
+Δ total gain      -0.15
+Δ earliest offset +10 ms
+Δ latest offset   +25 ms
+Δ fade            -20 ms
 
-result:
-0 observations
+sources
+shared             1
+current-only       1
+reference-only     0
 ```
 
-This prevents old decisions from leaking into unrelated work merely because some context is available.
+These values are measurements, not advice.
 
-## CLI
+## No closeness score
 
-Retrieve context:
-
-```bash
-mgal decision-context "heavy metallic slash" \
-  --audio-root ./audio \
-  --limit 6
-```
-
-Write a portable JSON Context Pack:
-
-```bash
-mgal decision-context "heavy metallic slash" \
-  --audio-root ./audio \
-  --limit 6 \
-  --output ./context/heavy-metallic-slash.json
-```
-
-Verify that a saved pack still matches current Decision Memory:
-
-```bash
-mgal decision-context-verify \
-  ./context/heavy-metallic-slash.json \
-  --audio-root ./audio
-```
-
-## Memory snapshot binding
-
-Each Context Pack records:
+M2.2 intentionally does not create:
 
 ```text
-decision_memory_sha256
+similarity_score
+closer_to
+recommended_candidate
+candidate_ranking
+preference_score
+auto_select
+apply_winner
 ```
 
-The hash covers the complete canonical Decision Memory used during retrieval.
+It also does not color one reference as "better" or automatically copy settings from a past winner.
 
-Therefore:
-
-```text
-Context Pack generated
-      ↓
-another archive gets promoted
-      ↓
-Decision Memory changes
-      ↓
-old Context Pack = stale
-```
-
-`decision-context-verify` rejects a stale pack instead of pretending it still represents the current memory set.
-
-The Context Pack itself also has a deterministic:
-
-```text
-context:<sha256-prefix>
-```
-
-identity derived from its payload.
+Past winner/loser labels are historical facts from the archived listening session, not instructions for the current Recipe.
 
 ## Browser workflow
 
-The Intent field now has:
+After loading an M2.1 Context Pack:
 
 ```text
 [ Load memory context ]
 [ Download context pack ]
+
+[ Inspect current deltas ]
+[ Download delta inspector ]
 ```
 
-Loading is explicit. MGAL does not query Decision Memory on every keystroke.
-
-The Browser calls:
+The Browser sends:
 
 ```text
-GET /api/decision-context?intent=<current-intent>&limit=6
+POST /api/decision-context-inspect
 ```
 
-A result appears beside the current Recipe work:
+with:
 
-```text
-MEMORY CONTEXT · REFERENCE ONLY
-
-3 of 3 matching observations
-
-memory-b preferred over memory-a
-metal-archive · crisp metallic sword impact
-matched metallic, sword, impact
-observed Δ gain +0.3 · earliest offset +25ms
+```json
+{
+  "context_pack": { "...": "..." },
+  "current_recipe": { "...": "..." }
+}
 ```
 
-There are no Candidate-action buttons in this panel.
+The Python server:
 
-## Intent-change staleness
+1. validates the Context Pack
+2. requires its Decision Memory fingerprint to still be current
+3. validates the current Recipe
+4. safely resolves every current source beneath the audio root
+5. hashes current source bytes
+6. builds the current Recipe summary
+7. compares it separately with every past winner and loser summary
+8. returns an observation-only Inspector Pack
 
-If the creator edits Intent after loading Context:
+## Browser display
+
+The Inspector panel looks conceptually like:
 
 ```text
-Intent changed.
-Reload context before using this pack.
+CURRENT RECIPE · OBSERVATION ONLY
+
+Current current-slash
+2 layers · total gain 1.3
+
+metal-archive · pair 1
+
+Current − past winner · candidate-b
+Δ layers +1 · gain +0.4 · earliest -20ms
+sources shared 1 / current-only 1 / reference-only 0
+
+Current − past loser · candidate-a
+Δ layers +1 · gain +0.7 · earliest +5ms
+sources shared 0 / current-only 2 / reference-only 1
 ```
 
-The Browser marks the displayed pack stale and disables Context Pack download.
+Both reference blocks use the same visual treatment.
 
-It does not silently auto-retrieve a different set.
+There is no "winner-like" or "loser-like" verdict.
 
-This preserves an explicit relationship between:
+## Current Recipe staleness
+
+Inspector results are tied to the exact current Recipe and current source bytes.
+
+If the creator changes:
+
+- active Candidate
+- selected layers
+- gain
+- offset
+- current Intent/Context
+
+the Browser marks the existing Inspector stale and disables its download.
+
+The creator must explicitly run **Inspect current deltas** again.
+
+## Source drift
+
+A saved Inspector Pack contains both:
 
 ```text
-the intent the creator asked about
-and
-the observations shown beside it
+current_recipe_document
+current_recipe.recipe_sha256
+current_recipe.source_ids
 ```
 
-## Observation payload
+Verification re-hashes the current source WAV files.
 
-Each returned observation carries the promoted Decision Memory facts required for inspection:
+Therefore:
 
 ```text
-entry_id
-archive_id
-archive_evidence_sha256
-source_intent
-match metadata
-pair_index
-winner_candidate_id
-loser_candidate_id
-winner_recipe
-loser_recipe
-observed_differences
+Inspector generated
+      ↓
+current source file replaced
+      ↓
+same Recipe JSON
+      ↓
+Inspector verification fails
 ```
 
-Recipe summaries still use SHA-256 source identities rather than filesystem paths.
+The comparison is bound to the bytes that were actually present.
 
-## Automatic-action prohibition
+## CLI
 
-Context Pack validation rejects fields named:
+Build an Inspector Pack from a saved M2.1 Context Pack and Recipe:
 
-```text
-recommended_candidate
-auto_select
-preference_score
-candidate_ranking
+```bash
+mgal decision-context-inspect \
+  ./context/heavy-metallic-slash.json \
+  ./current-recipe.json \
+  --audio-root ./audio \
+  --output ./context/heavy-metallic-slash-delta.json
 ```
 
-M2.1 also does not introduce:
+Verify it later:
 
-```text
-copy winner to Candidate
-apply past winner
-auto fork
-auto mix
-auto source selection
+```bash
+mgal decision-context-inspect-verify \
+  ./context/heavy-metallic-slash-delta.json \
+  --audio-root ./audio
 ```
 
-The Browser independently checks:
+Verification rebuilds:
+
+- current Decision Memory fingerprint
+- deterministic Context retrieval
+- current Recipe summary
+- current source SHA-256 identities
+- every winner/loser delta
+- Inspector content-derived ID
+
+and requires exact equality.
+
+## Inspector identity
+
+The Inspector gets:
 
 ```text
-usage.role == reference_only
-usage.selection_effect == none
+delta:<canonical payload SHA-256 prefix>
 ```
 
-before displaying a server result.
+Changing any of these changes the ID:
 
-## Relationship to M2.0
+- Decision Memory
+- Context query/result
+- current Recipe document
+- current source content identity
+- calculated deltas
+
+## Relationship to M2.1
 
 ```text
-M2.0 Decision Memory
-= the observations the creator explicitly chose to remember
-
 M2.1 Context Pack
-= a small deterministic subset relevant to the current intent
+= which past observations are relevant?
+
+M2.2 Delta Inspector
+= how does the current Recipe differ from each of them?
 ```
 
-Decision Memory is durable workspace state.
+Neither layer answers:
 
-Context Pack is a query result bound to one Memory snapshot and one intent.
+```text
+What should I choose?
+```
+
+That remains a new listening decision.
 
 ## Current constraints
 
-- retrieval is lexical, not semantic embedding search
-- there is no stemming or synonym expansion
-- CJK support is deterministic 2-gram matching, not language-specific morphology
-- retrieval uses Decision Memory intent text only
-- Context Pack does not retrieve raw WAV files
-- no automatic weighting from repeated wins
-- no time decay or recency bonus
-- no learned taste model
-- Browser limit is currently fixed at 6
-- stale Context Packs must be regenerated after Decision Memory changes
+- Recipe comparison uses the small deterministic feature set already present in Decision Memory
+- total gain is a structural sum, not psychoacoustic loudness
+- source overlap is exact SHA-256 identity only
+- no waveform similarity or embedding similarity
+- no perceived-timbre distance
+- no closeness score
+- no automatic Recipe mutation
+- no automatic copy-from-winner
+- Inspector requires current source files to be available
+- Browser uses the currently active Recipe/Candidate as Current
+- stale Inspector Packs must be regenerated after Memory, Context, Recipe, or source changes
 
 ## Design principle
 
-> Let memory answer “what happened before?” without answering “what should I choose now?”
+> Show the difference. Do not decide what the difference means.
 
-M2.1 gives the creator relevant past evidence at the moment of creation while leaving the new decision open.
+M2.2 lets the creator compare the present with remembered listening evidence while keeping interpretation and action human.
