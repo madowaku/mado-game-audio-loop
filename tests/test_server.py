@@ -149,3 +149,14 @@ def test_server_exposes_variation_brief_contract():
     assert '"inspector"' in source
     assert '"human_input"' in source
     assert "VariationBriefError" in source
+
+
+def test_server_exposes_candidate_plan_contract():
+    from mgal import server as server_module
+
+    source = Path(server_module.__file__).read_text(encoding="utf-8")
+    assert 'parsed.path == "/api/candidate-plans"' in source
+    assert "create_candidate_plan_from_brief_id" in source
+    assert "list_candidate_plans" in source
+    assert '"brief_id"' in source
+    assert "CandidatePlanError" in source
