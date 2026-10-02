@@ -301,6 +301,7 @@ def _provenance_report(
                 "license": entry.get("license"),
                 "generation": entry.get("generation"),
                 "recording": entry.get("recording"),
+                "normalization": entry.get("normalization"),
                 "notes": entry.get("notes"),
             }
         )
