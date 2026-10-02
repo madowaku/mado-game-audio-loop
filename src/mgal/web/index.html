@@ -112,11 +112,55 @@
           <div class="preference-actions">
             <button id="preference-reveal-button" class="secondary compact" type="button" disabled>Reveal</button>
             <button id="preference-apply" class="primary compact" type="button" disabled>Apply winner</button>
-            <button id="preference-evidence" class="secondary compact" type="button" disabled>Download evidence</button>
+            <button id="preference-evidence" class="secondary compact" type="button" disabled>Archive + download</button>
             <button id="preference-close" class="secondary compact" type="button">Close</button>
           </div>
           <p class="audition-shortcuts">During session: 1/2 play · ←/→ prefer · R reveal after voting · Esc stop audio</p>
         </section>
+
+        <section id="preference-archive" class="preference-archive">
+          <div class="preference-archive-head">
+            <div>
+              <p class="eyebrow">PREFERENCE ARCHIVE</p>
+              <h3>Replay past blind sessions</h3>
+            </div>
+            <button id="refresh-preference-archive" class="secondary compact" type="button">↻ Refresh</button>
+          </div>
+          <p id="preference-archive-empty" class="hint">No archived Preference Sessions yet.</p>
+          <div id="preference-archive-list" class="preference-archive-list"></div>
+
+          <div id="preference-replay-panel" class="preference-replay-panel" hidden>
+            <div class="preference-replay-head">
+              <div>
+                <p class="eyebrow">VERIFIED REPLAY</p>
+                <h3 id="preference-replay-title">Preference replay</h3>
+              </div>
+              <button id="close-preference-replay" class="secondary compact" type="button">Close</button>
+            </div>
+            <p id="preference-replay-result" class="preference-message"></p>
+            <div id="preference-replay-mapping" class="preference-replay-mapping"></div>
+            <div class="preference-replay-nav">
+              <button id="preference-replay-prev" class="secondary compact" type="button">← Prev pair</button>
+              <span id="preference-replay-position" class="count">0 / 0</span>
+              <button id="preference-replay-next" class="secondary compact" type="button">Next pair →</button>
+            </div>
+            <div class="preference-pair">
+              <div class="preference-side">
+                <strong id="preference-replay-left-label">X</strong>
+                <span id="preference-replay-left-candidate" class="preference-replay-candidate"></span>
+                <button id="preference-replay-left-play" class="secondary compact" type="button">▶ Play X</button>
+              </div>
+              <span class="preference-versus">vs</span>
+              <div class="preference-side">
+                <strong id="preference-replay-right-label">Y</strong>
+                <span id="preference-replay-right-candidate" class="preference-replay-candidate"></span>
+                <button id="preference-replay-right-play" class="secondary compact" type="button">▶ Play Y</button>
+              </div>
+            </div>
+            <p id="preference-replay-vote" class="preference-verdict"></p>
+          </div>
+        </section>
+
         <p id="candidate-help" class="hint">Build a mix, then fork it into three candidates for rapid comparison.</p>
         <div id="candidate-board" class="candidate-board"></div>
         <button id="download-board" class="secondary full-width" type="button" disabled>Download board JSON</button>
