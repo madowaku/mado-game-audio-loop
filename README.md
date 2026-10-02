@@ -2,180 +2,185 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → seed → blind audition → compare → decide → evidence → release**
+**provide → intake → seed → randomized blind preference → decide → evidence → release**
 
-## Current milestone: M1.5 Blind / Sequential Audition
+## Current milestone: M1.6 Randomized Blind / Preference Session
 
-M1.5 makes the Candidate Board usable as an ear-first comparison surface.
+M1.6 removes another comparison bias: the meaning of A/B/C itself.
+
+A Preference Session temporarily remaps Candidates to random aliases:
 
 ```text
-A
-↓
-B
-↓
-C
-↓
-human decision
+Candidate A ─┐
+Candidate B ─┼─ random mapping → X / Y / Z
+Candidate C ─┘
 ```
 
-Blind mode hides source identity and Provider context during the first listen.
+The mapping is hidden until Reveal.
 
-## Blind mode
+## Randomized identity
 
-Blind mode hides:
+When a session starts, MGAL:
 
-- source filenames and paths
-- Provider / intake badges
-- prompt and intent context
-- Candidate source summaries
-- Candidate lineage metadata
-- structural delta text
-- live mixer layer names
-- intake session metadata
+1. takes up to three current Candidates
+2. shuffles their mapping to X/Y/Z
+3. generates every unique pair
+4. shuffles pair order
+5. randomly swaps left/right position inside each pair
 
-A/B/C labels remain visible. Decision controls remain visible.
+Browser randomness comes from `window.crypto.getRandomValues()`.
 
-Blind is audition-only state. It is never written into Candidate Board JSON, Recipe JSON, Evidence, or Release artifacts.
-
-## Sequential audition
-
-Use:
+For three Candidates, one session contains exactly three pairwise votes:
 
 ```text
-▶ A→B→C
+X vs Y
+X vs Z
+Y vs Z
 ```
 
-MGAL plays each Candidate once:
+The order and left/right presentation are randomized per session.
+
+## Pairwise preference
+
+The Preference panel shows only random aliases before Reveal.
 
 ```text
-A finishes
-  ↓
-350 ms gap
-  ↓
-B finishes
-  ↓
-350 ms gap
-  ↓
-C finishes
-  ↓
-stop
+Which sound do you prefer?
+
+X                 Y
+[ Play X ]   vs   [ Play Y ]
+[ Prefer X ]      [ Prefer Y ]
 ```
 
-For layered Candidates, MGAL waits until all scheduled layers have ended before advancing.
-
-Stopping playback cancels the sequence. Manual Candidate preview or previous/next navigation also cancels the running sequence.
-
-## Candidate navigation
-
-The audition toolbar includes:
+Keyboard shortcuts during an unrevealed session:
 
 ```text
-Blind: On/Off
-▶ A→B→C
-← Prev
-Next →
-A · 1/3
+1           play left alias
+2           play right alias
+←           prefer left alias
+→           prefer right alias
+R           reveal, but only after all pairs are voted
+P           close Preference Session
+Esc         stop current audio
 ```
 
-Previous/next navigation activates and immediately previews the target Candidate.
+Normal Candidate navigation shortcuts are intercepted during pairwise voting so arrow keys cannot accidentally reveal or navigate the underlying Board.
 
-## Keyboard-first audition
+## Identity sealing
 
-When focus is not inside an input, textarea, select, or editable field:
+Before Reveal, the UI hides:
+
+- original A/B/C identity
+- source filenames/paths
+- Provider/intake/prompt context
+- Candidate lineage and structural delta
+- previous Favorite/Reject/Selected badges
+- Edit and Copy controls
+- decision controls and reason text
+
+The Candidate cards themselves are rendered in randomized X/Y/Z order.
+
+Reveal-before-completion is not allowed.
+
+Board and Recipe download are disabled before Reveal so the user cannot accidentally inspect the underlying Candidate IDs or source paths through exported JSON.
+
+Blind mode cannot be turned off during the hidden phase.
+
+Normal A→B→C sequence and Prev/Next navigation are also disabled until Reveal.
+
+## Reveal
+
+After every pair is voted, Reveal becomes available.
+
+MGAL shows:
 
 ```text
-Space       replay active Candidate
-← / →       previous / next Candidate + preview
-F           toggle Favorite
-X           toggle Reject
-S           toggle Select
-B           toggle Blind mode
-Q           start / stop A→B→C sequence
-Esc         stop audition
+X = Candidate B · 2 wins
+Y = Candidate A · 1 win
+Z = Candidate C · 0 wins
 ```
 
-Keyboard shortcuts do not fire while writing a decision reason or editing Recipe controls.
+The original Candidate labels and normal Board controls return.
 
-## Decision integration
+## Preference winner
 
-M1.5 does not introduce a second scoring system.
+Scores are simple pairwise win counts.
 
-Keyboard actions call the same Candidate decision contract already used by buttons:
+For three Candidates:
 
 ```text
-undecided
-favorite
-reject
+2 wins / 1 win / 0 wins → single winner
+1 win / 1 win / 1 win → tie
+```
+
+A tie never applies a Candidate decision automatically.
+
+Even with a single winner, MGAL still does not change the Board until the user presses:
+
+```text
+Apply winner
+```
+
+Only then is the winning Candidate assigned the existing durable decision:
+
+```text
 selected
 ```
 
-At most one Candidate remains selected because the existing Candidate Board logic is reused.
+No new score/rating field is added to Candidate Board 0.1.
 
-## Playback safety
+## Persistence boundary
 
-Audition playback uses a playback token so a stale completion callback from an older playback cannot advance a newer sequence.
-
-Transient audition state is:
+Preference Session state is intentionally transient:
 
 ```text
-blindMode
-sequenceRunning
-sequenceIndex
-sequenceTimer
-playbackToken
+X/Y/Z mapping
+pair order
+left/right order
+votes
+win counts
+Reveal state
 ```
 
-None of it enters Board persistence.
+None of those fields enter Candidate Board JSON.
 
-## M1.4 intake seed fits directly
+If the user closes the Preference Session without Apply winner, the durable Candidate Board remains unchanged.
 
-A generated-audio loop can now be:
+If Apply winner is pressed, only the normal `selected` decision changes.
+
+## Relationship to M1.5
+
+M1.5 Blind mode hides source context while preserving A/B/C labels.
+
+M1.6 Preference mode goes further:
 
 ```text
-Provider intake
-     ↓
-Seed A/B/C
-     ↓
-Blind: On
-     ↓
-Q
-     ↓
-A → B → C
-     ↓
-F / X / S
+M1.5
+A / B / C known
+source identity hidden
+
+M1.6
+A / B / C mapping hidden
+source identity hidden
+pair order randomized
+left/right order randomized
 ```
 
-The creator can hear generated alternatives before looking at which file, seed, or Provider produced them.
-
-## Existing workflow remains
-
-Blind/Sequential works for both:
-
-```text
-Intake → Seed A/B/C
-```
-
-and:
-
-```text
-Add layers → Fork A/B/C
-```
-
-Layered Candidates can also be blind/sequentially auditioned.
+Both modes work with Intake-seeded Candidates and manually-forked layered Candidates.
 
 ## Current constraints
 
-- sequential order is fixed to A → B → C
-- inter-Candidate gap is fixed at 350 ms
-- no randomized blind order yet
-- A/B/C labels remain visible in Blind mode
-- Candidate loudness is not automatically matched
-- Blind mode is local UI state only
-- keyboard shortcuts are browser-only
-- no persisted audition-session analytics yet
+- Preference Session uses at most three Candidates
+- all pairwise comparisons are one vote each
+- win count is unweighted
+- no undo/back button for a submitted pair vote yet
+- session mapping and votes are lost on page reload
+- no Preference Session JSON export yet
+- no loudness matching yet
+- no automatic statistical significance claim is made
 
 ## Design principle
 
-> Hide the story of the sound long enough to hear the sound itself.
+> Randomize what the ear should not know. Persist only what the creator deliberately decides.
 
-M1.5 turns the Candidate Board from a visual comparison tool into a fast listening instrument.
+M1.6 turns blind audition into an explicit pairwise preference experiment without changing MGAL's evidence-bearing Candidate Board contract.
