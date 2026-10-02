@@ -42,6 +42,10 @@ def test_candidate_board_static_contract():
         "preference-replay-left-play",
         "preference-replay-right-play",
         "close-preference-replay",
+        "decision-memory",
+        "decision-memory-summary",
+        "decision-memory-list",
+        "refresh-decision-memory",
     ):
         assert f'id="{element_id}"' in html
 
@@ -109,6 +113,12 @@ def test_candidate_board_static_contract():
         "/recover",
         "Recover sources",
         "source_status",
+        "promotePreferenceArchive",
+        "refreshDecisionMemory",
+        "renderDecisionMemory",
+        "/api/decision-memory",
+        "/promote",
+        "Promote memory",
     ):
         assert token in js
 
@@ -334,3 +344,28 @@ def test_preference_source_recovery_ui_contract():
     assert 'entry.source_status === "relinked"' in js
     assert "sources relinked by SHA-256" in js
     assert ".recovery-action" in css
+
+
+def test_decision_memory_ui_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "DECISION MEMORY" in html
+    assert "Promoted listening observations" in html
+    assert "Only explicit promotions enter memory." in html
+    assert "never auto-select a Candidate" in html
+
+    assert "entry.promotable" in js
+    assert "entry.promoted" in js
+    assert '"Promote memory"' in js
+    assert '"/promote"' in js
+    assert 'fetch("/api/decision-memory"' in js
+    assert "pairwise observation" in js
+    assert "observed Δ layers" in js
+    assert "winner_candidate_id" in js
+    assert "loser_candidate_id" in js
+
+    assert ".decision-memory" in css
+    assert ".decision-memory-row" in css
+    assert ".memory-promotion-action" in css
