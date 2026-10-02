@@ -7,6 +7,7 @@ import pytest
 
 from mgal.provenance import (
     update_provenance_entry,
+    validate_provenance_ledger,
     write_provenance_ledger,
 )
 from mgal.provider import (
@@ -16,6 +17,7 @@ from mgal.provider import (
     SourceRequest,
     provider_result_to_dict,
     validate_provider_result,
+    write_provider_provenance_ledger,
 )
 
 
@@ -59,6 +61,7 @@ def test_local_provider_returns_stable_contract_and_provenance(tmp_path: Path):
 
     assert payload["source_provider_contract_version"] == "1.0"
     assert payload["provider_kind"] == "local_file"
+    assert Path(payload["artifact_root"]).is_absolute()
     assert payload["candidate_count"] == 1
     candidate = payload["candidates"][0]
     assert candidate["relative_path"] == "metal-hit.wav"
@@ -132,3 +135,64 @@ def test_request_rejects_unbounded_candidate_count():
             intent="impact",
             count=33,
         ).validate()
+
+
+def test_explicit_hint_with_no_match_returns_no_candidates(tmp_path: Path):
+    audio = tmp_path / "audio"
+    _write_wav(audio / "cloth.wav", 300)
+
+    provider = LocalFileProvider(audio)
+    result = provider.provide(
+        SourceRequest(
+            request_id="metal-only",
+            intent="heavy hit",
+            count=4,
+            hints=("metal",),
+        )
+    )
+
+    assert result.candidates == ()
+
+
+def test_generated_provider_can_emit_valid_provenance_ledger(tmp_path: Path):
+    provider = FixtureGeneratedProvider(tmp_path / "generated")
+    result = provider.provide(
+        SourceRequest(
+            request_id="generated-impact",
+            intent="short metallic impact",
+            count=2,
+            duration_ms=90,
+            seed="7",
+        )
+    )
+
+    ledger_path = write_provider_provenance_ledger(
+        result,
+        tmp_path / "provider-provenance.json",
+    )
+    report = validate_provenance_ledger(
+        ledger_path,
+        audio_root=result.artifact_root,
+    )
+
+    assert report["complete"] is True
+    assert report["entries"] == 2
+
+
+def test_provider_validation_detects_artifact_tampering(tmp_path: Path):
+    provider = FixtureGeneratedProvider(tmp_path / "generated")
+    result = provider.provide(
+        SourceRequest(
+            request_id="impact",
+            intent="impact",
+            count=1,
+        )
+    )
+
+    candidate_path = (
+        Path(result.artifact_root) / result.candidates[0].relative_path
+    )
+    _write_wav(candidate_path, 1234)
+
+    with pytest.raises(SourceProviderError, match="candidate"):
+        validate_provider_result(result)
