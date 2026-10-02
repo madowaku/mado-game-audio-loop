@@ -462,15 +462,13 @@ def validate_materialized_recipe_set(
             "source Recipe fingerprint does not match source_recipe_summary"
         )
     if (
-        source_summary.get(
-            "recipe_sha256"
-        )
+        source_summary
         != plan["basis"][
             "current_recipe"
-        ].get("recipe_sha256")
+        ]
     ):
         raise RecipeMaterializerError(
-            "source Recipe fingerprint does not match Candidate Plan basis"
+            "source Recipe summary does not match Candidate Plan basis"
         )
 
     if data.get(
