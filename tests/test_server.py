@@ -137,3 +137,15 @@ def test_server_exposes_delta_inspector_contract():
     assert '"context_pack"' in source
     assert '"current_recipe"' in source
     assert "DeltaInspectorError" in source
+
+
+def test_server_exposes_variation_brief_contract():
+    from mgal import server as server_module
+
+    source = Path(server_module.__file__).read_text(encoding="utf-8")
+    assert 'parsed.path == "/api/variation-briefs"' in source
+    assert "create_variation_brief" in source
+    assert "list_variation_briefs" in source
+    assert '"inspector"' in source
+    assert '"human_input"' in source
+    assert "VariationBriefError" in source
