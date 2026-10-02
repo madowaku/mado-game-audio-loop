@@ -17,6 +17,7 @@ from mgal.providers.stability import (
     StabilityGeneration,
     StabilityHTTPTransport,
     _effective_duration_seconds,
+    _seed_for_candidate,
 )
 from mgal.provider import write_provider_provenance_ledger
 
@@ -226,3 +227,8 @@ def test_http_transport_polls_async_result_without_network():
     assert "impact" in post_body
     assert "stable-audio-3" in post_body
     assert "test-secret-key" not in post_body
+
+
+def test_explicit_zero_seed_preserves_api_random_seed_semantics():
+    assert _seed_for_candidate("0", 1) == 0
+    assert _seed_for_candidate("0", 2) == 0
