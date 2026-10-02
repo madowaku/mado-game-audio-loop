@@ -2,273 +2,279 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → blind preference → preference evidence → replay → final evidence → release**
+**provide → intake → blind preference → archive → replay → decide → evidence → release**
 
-## Current milestone: M1.7 Preference Session Evidence / Replay
+## Current milestone: M1.8 Preference Replay UI / Session Archive
 
-M1.7 preserves the evaluation process from M1.6 without polluting Candidate Board 0.1.
+M1.8 turns Preference Evidence into a durable local history that can be reopened and replayed from the Browser Audition Board.
 
-The durable split is now:
-
-```text
-Candidate Board
-= what the creator finally selected
-
-Preference Session Evidence
-= how the randomized blind comparison was conducted
-```
-
-## Preference Session Evidence 0.1
-
-After all pair votes are complete and Reveal has happened, the Browser enables:
+The workspace now carries:
 
 ```text
-Download evidence
+audio/
+└── .mgal/
+    ├── provenance-ledger.json
+    ├── intakes/
+    └── preferences/
+        └── <archive-id>/
+            ├── manifest.json
+            └── evidence.json
 ```
 
-The Browser sends the revealed session plus the current Candidate Board snapshot to the local MGAL server.
+## Archive a completed Preference Session
 
-The server validates the session and fingerprints the actual WAV files before returning the evidence JSON.
-
-Top-level format:
+After Reveal, the Browser action is:
 
 ```text
-preference_session_version = 0.1
-candidate_board_sha256
-candidate_board
-mapping
-pairs
-votes
-scores
-winner_candidate_id
-tie
-applied_candidate_id
-source_index
+Archive + download
 ```
 
-## What is captured
-
-### Candidate Board snapshot
-
-The complete Candidate Board used when Evidence is compiled is embedded.
-
-A canonical JSON SHA-256 binds the session to that exact Board snapshot.
-
-### Randomized mapping
+The Browser sends the session to:
 
 ```text
-X → candidate-b
-Y → candidate-a
-Z → candidate-c
+POST /api/preference-archive
 ```
 
-The exact random alias mapping is preserved.
+The server:
 
-### Pair schedule
+1. compiles Preference Evidence 0.1
+2. validates Candidate Board, mapping, pairs, votes and winner/tie
+3. fingerprints every compared source WAV
+4. verifies replay against the current workspace
+5. writes a content-addressed archive session
+6. returns the same Evidence for download
 
-Every comparison stores its actual order and left/right placement:
-
-```text
-pair 0
-left  = Y / candidate-a
-right = X / candidate-b
-
-pair 1
-left  = Z / candidate-c
-right = Y / candidate-a
-```
-
-Replay never generates fresh randomness.
-
-It reuses this recorded schedule.
-
-### Votes
-
-Each pair records:
-
-- pair index
-- winner alias
-- winner Candidate ID
-- loser Candidate ID
-
-Scores are recomputed from votes during validation rather than blindly trusted.
-
-### Result
-
-Evidence stores:
-
-```text
-winner_candidate_id
-tie
-applied_candidate_id
-```
-
-`applied_candidate_id` may remain null if the creator revealed the result but chose not to Apply winner.
-
-If it is present, it must:
-
-- equal the unique preference winner
-- equal the selected Candidate in the embedded Board
-
-## Audio fingerprints
-
-The compiler resolves every source referenced by the compared Candidates beneath the configured audio root.
-
-For each unique source it stores:
-
-```text
-relative_path
-sha256
-bytes
-```
-
-This means Preference Replay can detect a sound file that was replaced after the listening session.
-
-## Browser evidence compilation
-
-The Browser does not author the final evidence document itself.
-
-It POSTs the transient session to:
+The older compile-only endpoint remains available:
 
 ```text
 POST /api/preference-evidence
 ```
 
-The Python compiler performs:
+## Content-addressed archive identity
 
-1. Candidate Board validation
-2. X/Y/Z mapping validation
-3. complete pair-combination validation
-4. vote-to-pair identity validation
-5. score and winner recomputation
-6. Apply-winner consistency validation
-7. source path safety checks
-8. WAV byte/hash fingerprinting
+If no explicit archive ID is supplied, MGAL derives one from:
 
-Only then is the downloadable Evidence JSON returned.
-
-## CLI validation
-
-```bash
-mgal validate-preference ./heavy-slash-preference-evidence.json
+```text
+<base-recipe-id>-<preference-evidence-sha256-prefix>
 ```
 
-Example report:
+The hash is computed from canonical JSON.
 
-```json
-{
-  "ok": true,
-  "candidates": 3,
-  "pairs": 3,
-  "winner_candidate_id": "heavy-slash-b",
-  "tie": false,
-  "applied_candidate_id": "heavy-slash-b",
-  "sources": 3
-}
+Consequences:
+
+- saving the exact same Evidence again reuses the same archive
+- the same explicit archive ID cannot silently point to different Evidence
+- applying a winner changes the Board snapshot and therefore creates a distinct archive from the pre-Apply session
+
+## Archive manifest
+
+Each session has a small manifest:
+
+```text
+preference_archive_version = 0.1
+archive_id
+evidence_sha256
+candidate_board_sha256
+candidate_count
+pair_count
+source_count
+winner_candidate_id
+tie
+applied_candidate_id
 ```
 
-## Preference Replay
+The archive stores the full Preference Evidence separately as `evidence.json`.
+
+Archive verification also rechecks all current source WAV hashes.
+
+## CLI archive workflow
+
+Archive an exported session:
 
 ```bash
-mgal replay-preference ./heavy-slash-preference-evidence.json \
+mgal preference-archive ./preference-evidence.json \
+  --audio-root ./audio
+```
+
+Optionally choose a stable name:
+
+```bash
+mgal preference-archive ./preference-evidence.json \
+  --audio-root ./audio \
+  --archive-id heavy-slash-review
+```
+
+List sessions:
+
+```bash
+mgal preference-list --audio-root ./audio
+```
+
+Replay one archived session:
+
+```bash
+mgal preference-replay-archive heavy-slash-review \
   --audio-root ./audio \
   --output ./replay-plan.json
 ```
 
-Replay first verifies every source byte count and SHA-256.
+## Preference Archive UI
 
-If a compared WAV changed, replay fails.
-
-On success it reconstructs:
+The Browser now contains a local archive shelf:
 
 ```text
-mapping
-exact pair order
-left/right alias placement
-Candidate IDs
-source paths for each side
-recorded winner for each pair
-final winner / tie
-whether the winner was applied
+PREFERENCE ARCHIVE
+
+heavy-slash-7a21c4...
+3 pairs · 3 sources · winner candidate-b · applied candidate-b
+
+[ Replay ]
 ```
 
-The output is a deterministic replay plan.
+The list is loaded from:
 
-## Attach Preference Evidence to normal Evidence Bundle
+```text
+GET /api/preferences
+```
 
-Preference Evidence can remain standalone or be included in the normal MGAL Evidence Bundle:
+A broken archive remains visible with an error state rather than silently disappearing.
+
+## Verified Replay
+
+Opening an archive calls:
+
+```text
+GET /api/preferences/<archive-id>/replay
+```
+
+The server verifies the archived Evidence and all source fingerprints before returning a replay plan.
+
+If a WAV changed, replay is rejected before playback.
+
+The Browser Replay panel then shows:
+
+```text
+VERIFIED REPLAY
+
+X = Candidate B
+Y = Candidate A
+Z = Candidate C
+
+Pair 1 / 3
+
+Y                 X
+Candidate A       Candidate B
+
+[ Play Y ]   vs   [ Play X ]
+
+Recorded preference: X · Candidate B
+
+[ Prev pair ] [ Next pair ]
+```
+
+## Exact Recipe replay
+
+M1.7 replay returned source paths.
+
+M1.8 additionally includes each side's embedded Candidate Recipe:
+
+```text
+left_recipe
+right_recipe
+```
+
+The Browser hydrates those Recipe layers through the current audio catalog.
+
+That preserves:
+
+- source path
+- layer gain
+- layer offset
+- multiple layers
+
+So a manually designed layered Candidate can be replayed with the same Recipe parameters used during the archived comparison.
+
+## Archive does not overwrite current work
+
+Preference Replay is a separate Browser surface.
+
+Opening an old session does not:
+
+- replace the current Candidate Board
+- change active Candidate decisions
+- change the current Recipe
+- Apply the archived winner
+- rerun randomization
+
+Replay is observational.
+
+It reconstructs the recorded experiment.
+
+## Invalid archive behavior
+
+The archive list verifies each session.
+
+If its Evidence is malformed or a referenced source WAV changed, the session is shown as invalid.
+
+Example:
+
+```text
+heavy-slash-review
+INVALID · preference replay source hash changed: incoming/...wav
+```
+
+The Replay button is not offered for invalid sessions.
+
+## API surface
+
+```text
+POST /api/preference-evidence
+  compile only
+
+POST /api/preference-archive
+  compile + validate + archive
+
+GET /api/preferences
+  list/verify archives
+
+GET /api/preferences/<archive-id>/replay
+  verify sources + return exact replay plan
+```
+
+## Relationship to main Evidence Bundle
+
+Preference Archive and final Evidence Bundle have different roles.
+
+```text
+.mgal/preferences/
+= reusable local decision history
+
+Evidence Bundle
+= frozen release/decision evidence
+```
+
+A Preference Evidence artifact can still be attached to the normal Bundle with:
 
 ```bash
 mgal bundle candidate-board.json \
   --audio-root ./audio \
-  --preference-evidence ./heavy-slash-preference-evidence.json \
+  --preference-evidence ./preference-evidence.json \
   --output ./evidence/session-001
 ```
 
-The bundle stores:
-
-```text
-preference-session.json
-```
-
-and includes it in the existing manifest hash/size protection.
-
-`verify-bundle` also revalidates the Preference schema and result logic.
-
-If Preference Evidence says a winner was applied, that Candidate must match the Bundle's selected Candidate.
-
-## Evidence boundaries
-
-M1.7 does not move raw Preference state into Candidate Board.
-
-Candidate Board stays focused on durable creative state:
-
-```text
-Recipes
-lineage
-Favorite / Reject / Selected
-decision reason
-```
-
-Preference Evidence separately records the listening experiment:
-
-```text
-random mapping
-pair schedule
-votes
-score result
-Reveal outcome
-Apply outcome
-audio fingerprints
-```
-
-## Tamper detection
-
-Validation rejects, among other things:
-
-- changed embedded Candidate Board snapshot
-- duplicate pair combinations
-- missing pair combinations
-- winner alias that does not match the pair
-- incorrect loser identity
-- forged score totals
-- forged winner/tie flag
-- Apply winner that disagrees with Board selection
-- duplicate source index paths
-- changed source WAV bytes during replay
-
 ## Current constraints
 
-- Preference Evidence must be compiled after Reveal
-- incomplete sessions are not evidence
-- replay produces a verified replay plan, not browser auto-play yet
-- Preference Evidence has its own 0.1 schema and no migration tooling yet
-- source relinking for Preference Replay is not implemented yet
-- session timing and number of listens are not recorded
-- browser page reload still discards a session that was not exported
+- archive is local JSON, not a database
+- list operation verifies source hashes and may become heavier with very large archives
+- archive deletion/pruning UI is not implemented
+- archive tags/notes are not implemented
+- Browser Replay does not auto-play the entire pair sequence
+- replay requires original workspace-relative source paths
+- Preference source relinking is not implemented yet
+- archive has no wall-clock timestamp by design; identity is content-based
 
 ## Design principle
 
-> Final choice and evaluation process are both evidence, but they are different kinds of evidence.
+> A creative decision becomes more useful when its history can be reopened without changing the present.
 
-M1.7 preserves the blind listening experiment while keeping Candidate Board clean and reusable.
+M1.8 turns blind comparison Evidence into a navigable local decision archive.
