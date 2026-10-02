@@ -9,6 +9,11 @@ const state = {
   activeCandidateId: null,
   boardBaseRecipe: null,
   catalogSignature: null,
+  blindMode: false,
+  sequenceRunning: false,
+  sequenceIndex: -1,
+  sequenceTimer: null,
+  playbackToken: 0,
 };
 
 const list = document.querySelector("#audio-list");
@@ -32,6 +37,11 @@ const intakeSessions = document.querySelector("#intake-sessions");
 const intakeSessionList = document.querySelector("#intake-session-list");
 const intakeSessionCount = document.querySelector("#intake-session-count");
 const clearBoardButton = document.querySelector("#clear-board");
+const blindModeButton = document.querySelector("#blind-mode");
+const sequenceCandidatesButton = document.querySelector("#sequence-candidates");
+const previousCandidateButton = document.querySelector("#previous-candidate");
+const nextCandidateButton = document.querySelector("#next-candidate");
+const auditionPosition = document.querySelector("#audition-position");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -122,7 +132,59 @@ function resetPreviewLabels() {
   });
 }
 
-function stopMix() {
+function updateAuditionControls() {
+  const hasCandidates = state.candidates.length > 0;
+  const activeIndex = state.candidates.findIndex(function (candidate) {
+    return candidate.id === state.activeCandidateId;
+  });
+
+  blindModeButton.disabled = !hasCandidates;
+  sequenceCandidatesButton.disabled = !hasCandidates;
+  previousCandidateButton.disabled = !hasCandidates || activeIndex <= 0;
+  nextCandidateButton.disabled =
+    !hasCandidates ||
+    activeIndex < 0 ||
+    activeIndex >= state.candidates.length - 1;
+
+  blindModeButton.textContent = state.blindMode ? "Blind: On" : "Blind: Off";
+  blindModeButton.classList.toggle("active", state.blindMode);
+  sequenceCandidatesButton.textContent = state.sequenceRunning
+    ? "■ Stop sequence"
+    : "▶ A→B→C";
+  sequenceCandidatesButton.classList.toggle("active", state.sequenceRunning);
+
+  document.body.classList.toggle("blind-mode", state.blindMode);
+
+  if (!hasCandidates) {
+    auditionPosition.textContent = "No candidates";
+  } else if (activeIndex >= 0) {
+    auditionPosition.textContent =
+      state.candidates[activeIndex].label +
+      " · " +
+      String(activeIndex + 1) +
+      "/" +
+      String(state.candidates.length);
+  } else {
+    auditionPosition.textContent = "Ready";
+  }
+}
+
+function cancelSequentialAudition() {
+  if (state.sequenceTimer) {
+    clearTimeout(state.sequenceTimer);
+    state.sequenceTimer = null;
+  }
+  state.sequenceRunning = false;
+  state.sequenceIndex = -1;
+  updateAuditionControls();
+}
+
+function stopMix(options) {
+  const preserveSequence = Boolean(options && options.preserveSequence);
+  if (!preserveSequence) cancelSequentialAudition();
+
+  state.playbackToken += 1;
+
   if (state.mixRestartTimer) {
     clearTimeout(state.mixRestartTimer);
     state.mixRestartTimer = null;
@@ -239,11 +301,15 @@ async function playLayerSet(layers, options) {
   if (layers.length === 0) return;
 
   stopIndividualAuditions();
-  stopMix();
+  stopMix({
+    preserveSequence: Boolean(options && options.sequence),
+  });
   await audioContext.resume();
 
   const owner = options.owner;
   const respectAudition = options.respectAudition;
+  const onComplete = options.onComplete;
+  const playbackToken = state.playbackToken;
   state.previewOwner = owner;
 
   try {
@@ -281,6 +347,12 @@ async function playLayerSet(layers, options) {
           state.previewOwner = null;
           resetPreviewLabels();
           stopMixButton.disabled = true;
+          if (
+            playbackToken === state.playbackToken &&
+            typeof onComplete === "function"
+          ) {
+            onComplete();
+          }
         }
       };
       return voice;
@@ -305,12 +377,17 @@ async function previewMix() {
   previewMixButton.disabled = state.selected.length === 0;
 }
 
-async function previewCandidate(candidate) {
+async function previewCandidate(candidate, options) {
+  const sequence = Boolean(options && options.sequence);
+  if (!sequence) cancelSequentialAudition();
+
   const button = document.querySelector('[data-candidate-preview="' + candidate.id + '"]');
   if (button) button.textContent = "Loading…";
   await playLayerSet(candidate.layers, {
     owner: candidate.id,
     respectAudition: false,
+    sequence: sequence,
+    onComplete: options ? options.onComplete : null,
   });
   if (state.previewOwner === candidate.id && button) button.textContent = "■ Playing";
 }
@@ -499,6 +576,8 @@ function renderSounds(sounds) {
     const canvas = node.querySelector(".waveform");
     const sourceContext = node.querySelector(".source-context");
 
+    node.querySelector(".file-name").classList.add("blind-sensitive");
+    node.querySelector(".file-path").classList.add("blind-sensitive");
     node.querySelector(".file-name").textContent = sound.name;
     node.querySelector(".file-path").textContent = sound.relative_path;
     node.querySelector(".duration").textContent = formatDuration(sound.duration_ms);
@@ -508,6 +587,7 @@ function renderSounds(sounds) {
     if (sound.intake) {
       card.classList.add("intake-card");
       sourceContext.hidden = false;
+      sourceContext.classList.add("blind-sensitive");
       node.querySelector(".source-type-badge").textContent =
         sound.intake.source_type || sound.intake.provider_kind || "provider";
       node.querySelector(".provider-badge").textContent =
@@ -585,7 +665,7 @@ function renderLayer(layer) {
   head.className = "layer-head";
 
   const name = document.createElement("strong");
-  name.className = "layer-name";
+  name.className = "layer-name blind-sensitive";
   name.textContent = layer.sound.name;
   name.title = layer.sound.relative_path;
 
@@ -740,16 +820,106 @@ function seedCandidates() {
   renderCandidates();
 }
 
-function loadCandidate(candidateId) {
-  const candidate = state.candidates.find(function (item) {
-    return item.id === candidateId;
-  });
+function activateCandidate(candidate, options) {
   if (!candidate) return;
-  stopMix();
+  const preservePlayback = Boolean(options && options.preservePlayback);
+  if (!preservePlayback) stopMix();
   state.activeCandidateId = candidate.id;
   state.selected = candidate.layers;
   renderRecipe();
   renderCandidates();
+  updateAuditionControls();
+}
+
+function loadCandidate(candidateId) {
+  const candidate = state.candidates.find(function (item) {
+    return item.id === candidateId;
+  });
+  activateCandidate(candidate);
+}
+
+function candidateIndex() {
+  return state.candidates.findIndex(function (candidate) {
+    return candidate.id === state.activeCandidateId;
+  });
+}
+
+function moveCandidate(step, shouldPreview) {
+  if (state.candidates.length === 0) return;
+  cancelSequentialAudition();
+
+  const current = candidateIndex();
+  const start = current < 0 ? 0 : current;
+  const targetIndex = Math.max(
+    0,
+    Math.min(state.candidates.length - 1, start + step)
+  );
+  const candidate = state.candidates[targetIndex];
+  activateCandidate(candidate);
+
+  if (shouldPreview) previewCandidate(candidate);
+}
+
+function toggleBlindMode() {
+  if (state.candidates.length === 0) return;
+  state.blindMode = !state.blindMode;
+  updateAuditionControls();
+  status.textContent = state.blindMode
+    ? "Blind audition enabled · source and provider identity hidden"
+    : "Blind audition disabled";
+}
+
+async function playSequentialCandidate(index) {
+  if (!state.sequenceRunning) return;
+
+  if (index >= state.candidates.length) {
+    cancelSequentialAudition();
+    status.textContent = "Sequential audition complete";
+    return;
+  }
+
+  state.sequenceIndex = index;
+  const candidate = state.candidates[index];
+  state.activeCandidateId = candidate.id;
+  state.selected = candidate.layers;
+  renderRecipe();
+  renderCandidates();
+  updateAuditionControls();
+
+  status.textContent =
+    "Sequential audition · " +
+    candidate.label +
+    " · " +
+    String(index + 1) +
+    "/" +
+    String(state.candidates.length);
+
+  await previewCandidate(candidate, {
+    sequence: true,
+    onComplete: function () {
+      if (!state.sequenceRunning) return;
+      state.sequenceTimer = setTimeout(function () {
+        state.sequenceTimer = null;
+        playSequentialCandidate(index + 1);
+      }, 350);
+    },
+  });
+}
+
+function startSequentialAudition() {
+  if (state.candidates.length === 0) return;
+
+  if (state.sequenceRunning) {
+    stopMix();
+    status.textContent = "Sequential audition stopped";
+    return;
+  }
+
+  stopAll();
+  state.sequenceRunning = true;
+  state.sequenceIndex = 0;
+  updateAuditionControls();
+  playSequentialCandidate(0);
 }
 
 function copyActiveInto(targetId) {
@@ -786,6 +956,8 @@ function setCandidateDecision(candidateId, decision) {
 
   candidate.decision = candidate.decision === decision ? "undecided" : decision;
   renderCandidates();
+  status.textContent =
+    "Candidate " + candidate.label + " · " + candidate.decision;
 }
 
 function candidateDeltaCount(candidate) {
@@ -846,7 +1018,7 @@ function renderCandidateCard(candidate) {
   badge.className = "candidate-badge";
   badge.textContent = candidate.decision;
   const lineage = document.createElement("div");
-  lineage.className = "candidate-meta";
+  lineage.className = "candidate-meta blind-sensitive";
   lineage.textContent =
     "parent: " +
     candidate.parent_recipe_id +
@@ -869,7 +1041,7 @@ function renderCandidateCard(candidate) {
   head.append(title, edit);
 
   const delta = document.createElement("div");
-  delta.className = "candidate-delta";
+  delta.className = "candidate-delta blind-sensitive";
   const changes = candidateDeltaCount(candidate);
   delta.textContent =
     String(candidate.layers.length) +
@@ -879,7 +1051,7 @@ function renderCandidateCard(candidate) {
     " vs base";
 
   const sourceSummary = document.createElement("div");
-  sourceSummary.className = "candidate-sources";
+  sourceSummary.className = "candidate-sources blind-sensitive";
   sourceSummary.textContent = candidate.layers
     .map(function (layer) {
       return layer.sound.name;
@@ -940,6 +1112,9 @@ function renderCandidates() {
     candidateHelp.hidden = false;
     downloadBoardButton.disabled = true;
     clearBoardButton.disabled = true;
+    cancelSequentialAudition();
+    state.blindMode = false;
+    updateAuditionControls();
     renderIntakeSessions();
     return;
   }
@@ -950,6 +1125,7 @@ function renderCandidates() {
   });
   downloadBoardButton.disabled = false;
   clearBoardButton.disabled = false;
+  updateAuditionControls();
   renderIntakeSessions();
 }
 
@@ -1004,8 +1180,18 @@ downloadBoardButton.addEventListener("click", function () {
 
 seedCandidatesButton.addEventListener("click", seedCandidates);
 
+blindModeButton.addEventListener("click", toggleBlindMode);
+sequenceCandidatesButton.addEventListener("click", startSequentialAudition);
+previousCandidateButton.addEventListener("click", function () {
+  moveCandidate(-1, true);
+});
+nextCandidateButton.addEventListener("click", function () {
+  moveCandidate(1, true);
+});
+
 clearBoardButton.addEventListener("click", function () {
   stopAll();
+  state.blindMode = false;
   state.candidates = [];
   state.activeCandidateId = null;
   state.boardBaseRecipe = null;
@@ -1014,6 +1200,70 @@ clearBoardButton.addEventListener("click", function () {
   renderCandidates();
   renderIntakeSessions();
   status.textContent = "Candidate Board cleared";
+});
+
+function isTypingTarget(target) {
+  if (!(target instanceof Element)) return false;
+  if (target.isContentEditable) return true;
+  return Boolean(target.closest("input, textarea, select"));
+}
+
+document.addEventListener("keydown", function (event) {
+  if (state.candidates.length === 0) return;
+  if (isTypingTarget(event.target)) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+  const key = event.key.toLowerCase();
+  const active = selectedCandidate();
+
+  if (event.key === " ") {
+    event.preventDefault();
+    if (active) previewCandidate(active);
+    return;
+  }
+
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    moveCandidate(1, true);
+    return;
+  }
+
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    moveCandidate(-1, true);
+    return;
+  }
+
+  if (event.key === "Escape") {
+    stopAll();
+    status.textContent = "Audition stopped";
+    return;
+  }
+
+  if (key === "b") {
+    event.preventDefault();
+    toggleBlindMode();
+    return;
+  }
+
+  if (key === "q") {
+    event.preventDefault();
+    startSequentialAudition();
+    return;
+  }
+
+  if (!active) return;
+
+  if (key === "f") {
+    event.preventDefault();
+    setCandidateDecision(active.id, "favorite");
+  } else if (key === "x") {
+    event.preventDefault();
+    setCandidateDecision(active.id, "reject");
+  } else if (key === "s") {
+    event.preventDefault();
+    setCandidateDecision(active.id, "selected");
+  }
 });
 
 function applyFilter() {
@@ -1088,6 +1338,7 @@ refreshSourcesButton.addEventListener("click", function () {
 
 async function boot() {
   await refreshCatalog({ quiet: false });
+  updateAuditionControls();
   renderRecipe();
   renderCandidates();
   window.setInterval(function () {
