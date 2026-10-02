@@ -2253,6 +2253,237 @@ Incomplete recovery reports ambiguous and missing counts and leaves the archive 
 - existing Preference Evidence and Archive formats remain immutable and compatible
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M2.0 Preference Archive Promotion / Decision Memory
+
+Goal:
+
+**Promote selected Preference Archives into a durable, cross-session collection of pairwise decision observations without allowing past observations to automatically choose future Candidates.**
+
+#### Storage
+
+```text
+audio/.mgal/decision-memory.json
+```
+
+Schema:
+
+```text
+decision_memory_version = 0.1
+promotion_count
+entry_count
+promotions[]
+entries[]
+```
+
+#### Explicit promotion
+
+```bash
+mgal decision-promote <archive-id> \
+  --audio-root ./audio
+```
+
+Only explicit promotion adds an archive to Decision Memory.
+
+Promotion depends on Preference Archive/Evidence integrity, not current WAV source availability.
+
+A source-unresolved but structurally valid archive remains promotable.
+
+#### Promotion identity
+
+Promotion is deduplicated by canonical Preference Evidence SHA-256.
+
+The same Evidence promoted repeatedly or through another archive alias produces one promotion.
+
+Promotion records:
+
+```text
+archive_id
+archive_evidence_sha256
+candidate_board_sha256
+intent
+pair_count
+winner_candidate_id
+tie
+applied_candidate_id
+entry_ids[]
+```
+
+#### Pairwise entries
+
+Each archived vote becomes one Decision Memory entry.
+
+A three-Candidate all-pairs Preference Session therefore contributes three entries, including when the overall session result is a cyclic tie.
+
+Entry fields:
+
+```text
+entry_id
+archive_id
+archive_evidence_sha256
+candidate_board_sha256
+intent
+pair_index
+winner_alias
+winner_candidate_id
+loser_candidate_id
+winner_recipe
+loser_recipe
+observed_differences
+```
+
+#### Recipe summary
+
+Recipe summaries are content-oriented and relocatable:
+
+```text
+recipe_id
+recipe_sha256
+layer_count
+total_gain
+earliest_offset_ms
+latest_offset_ms
+normalize
+fade_out_ms
+source_ids[]
+```
+
+`source_ids` use `sha256:<hash>` identities derived from Preference Evidence source-index entries.
+
+No current filesystem path is required.
+
+#### Observed differences
+
+For every pair MGAL derives:
+
+```text
+layer_count_delta
+total_gain_delta
+earliest_offset_ms_delta
+latest_offset_ms_delta
+fade_out_ms_delta
+normalize_changed
+shared_source_count
+winner_only_source_count
+loser_only_source_count
+```
+
+All deltas are winner minus loser.
+
+These are stored observations, not learned rules or quality scores.
+
+#### Internal validation
+
+Decision Memory validation requires:
+
+- supported version
+- promotion_count equals promotions length
+- entry_count equals entries length
+- unique entry IDs
+- unique promoted Evidence fingerprints
+- every promotion entry reference exists
+- each entry belongs to exactly one promotion
+- no unreferenced entries
+- observed differences recompute exactly from stored Recipe summaries
+
+#### Archive-backed verification
+
+```bash
+mgal decision-memory-verify \
+  --audio-root ./audio
+```
+
+Verification recompiles each promoted archive and requires the stored promotion and pairwise entries to equal the newly derived archive result.
+
+Source WAV availability is not required because Preference Evidence already carries content fingerprints and Recipe snapshots.
+
+#### Memory view
+
+```bash
+mgal decision-memory \
+  --audio-root ./audio
+```
+
+Returns:
+
+```text
+summary
+promotions
+entries
+```
+
+Summary includes promotion count, entry count, and promotion counts grouped by intent.
+
+#### Browser API
+
+```text
+GET  /api/decision-memory
+POST /api/preferences/<archive-id>/promote
+```
+
+Preference Archive list rows expose:
+
+```text
+promotable
+promoted
+```
+
+Promotion state is matched by Preference Evidence SHA-256.
+
+#### Browser UI
+
+The Preference Archive shelf adds:
+
+```text
+Promote memory
+In memory
+```
+
+The Decision Memory panel displays:
+
+- promoted session count
+- pairwise observation count
+- recent winner/loser observations
+- archive and intent context
+- deterministic Recipe deltas
+
+It explicitly states that observations do not auto-select Candidates.
+
+#### Human-control boundary
+
+M2.0 does not define or persist:
+
+```text
+recommended_candidate
+auto_select
+preference_score
+automatic Candidate ranking
+automatic Apply winner
+```
+
+Decision Memory is evidence available to future workflows, not authority over future choices.
+
+#### M2.0 acceptance
+
+- a valid Preference Archive can be explicitly promoted
+- promotion can succeed without current source WAV paths
+- promotion is idempotent by Preference Evidence fingerprint
+- multiple distinct promoted archives accumulate
+- every pairwise vote becomes one memory entry
+- overall tie sessions still preserve individual pair observations
+- Recipe summaries use content source IDs rather than filesystem paths
+- deterministic Recipe fingerprints are stored
+- observed winner-minus-loser differences are stored
+- Decision Memory validates counts, references, uniqueness, and derived differences
+- Decision Memory can be verified exactly against source Preference Archives
+- CLI supports promote/view/verify
+- Browser archive shelf exposes explicit promotion
+- recoverable archives remain promotable
+- Browser shows promoted state by Evidence fingerprint
+- Browser Decision Memory shows observation counts and recent pairwise entries
+- promotion does not mutate Preference Archive, Candidate Board, Recipe, or Relink Map
+- no automatic recommendation or selection field is introduced
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
