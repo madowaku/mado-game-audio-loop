@@ -118,3 +118,74 @@ def test_stability_cli_refuses_paid_request_without_opt_in(
         )
 
     assert not (tmp_path / "generated").exists()
+
+
+def test_provider_normalize_cli_round_trip(tmp_path: Path, capsys):
+    raw_root = tmp_path / "raw"
+    raw_result = tmp_path / "raw-result.json"
+    raw_provenance = tmp_path / "raw-provenance.json"
+
+    code = main(
+        [
+            "source-provide",
+            "--provider",
+            "fixture-generated",
+            "--artifact-root",
+            str(raw_root),
+            "--request-id",
+            "impact",
+            "--intent",
+            "impact",
+            "--count",
+            "2",
+            "--output",
+            str(raw_result),
+            "--provenance-output",
+            str(raw_provenance),
+        ]
+    )
+    assert code == 0
+    capsys.readouterr()
+
+    normalized_root = tmp_path / "canonical"
+    normalized_result = tmp_path / "normalized-result.json"
+    normalized_provenance = tmp_path / "normalized-provenance.json"
+
+    code = main(
+        [
+            "provider-normalize",
+            str(raw_result),
+            "--output-root",
+            str(normalized_root),
+            "--output",
+            str(normalized_result),
+            "--provenance-output",
+            str(normalized_provenance),
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(
+        normalized_result.read_text(encoding="utf-8")
+    )
+    assert payload["provider_id"] == "mgal-normalizer/fixture-generated"
+    assert payload["candidate_count"] == 2
+    assert all(
+        item["sample_rate"] == 44100
+        and item["channels"] == 1
+        and item["sample_width"] == 2
+        for item in payload["candidates"]
+    )
+    assert all(
+        "normalization" in item["provenance"]
+        for item in payload["candidates"]
+    )
+
+    report = validate_provenance_ledger(
+        normalized_provenance,
+        audio_root=normalized_root,
+    )
+    assert report["entries"] == 2
+
+    stdout = json.loads(capsys.readouterr().out)
+    assert stdout["candidate_count"] == 2
