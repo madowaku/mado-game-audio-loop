@@ -1947,6 +1947,187 @@ When supplied:
 - Preference state still does not enter Candidate Board serialization
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M1.8 Preference Replay UI / Session Archive
+
+Goal:
+
+**Store completed Preference Evidence as content-addressed workspace history and replay the exact recorded comparison in the Browser after source-integrity verification.**
+
+Workspace layout:
+
+```text
+audio/.mgal/preferences/<archive-id>/
+├── manifest.json
+└── evidence.json
+```
+
+Archive schema:
+
+```text
+preference_archive_version = 0.1
+archive_id
+evidence_sha256
+candidate_board_sha256
+candidate_count
+pair_count
+source_count
+winner_candidate_id
+tie
+applied_candidate_id
+```
+
+#### Archive identity
+
+Default archive ID:
+
+```text
+<base-recipe-id>-<canonical-evidence-sha256-prefix>
+```
+
+Preference Evidence is hashed from canonical sorted/compact JSON.
+
+Identical Evidence is idempotent and reuses the existing archive.
+
+An explicit archive ID that already points at different Evidence is rejected.
+
+#### Archive commit
+
+Before writing a new archive MGAL:
+
+1. validates Preference Evidence 0.1
+2. verifies all source byte sizes and SHA-256 values
+3. reconstructs replay data
+4. creates the archive directory
+5. writes evidence.json
+6. writes manifest.json
+7. verifies the complete archive
+
+#### CLI
+
+```bash
+mgal preference-archive preference.json \
+  --audio-root ./audio \
+  [--archive-id session-name]
+
+mgal preference-list --audio-root ./audio
+
+mgal preference-replay-archive session-name \
+  --audio-root ./audio \
+  [--output replay-plan.json]
+```
+
+#### Local server APIs
+
+```text
+POST /api/preference-evidence
+POST /api/preference-archive
+GET  /api/preferences
+GET  /api/preferences/<archive-id>/replay
+```
+
+The compile-only M1.7 endpoint remains supported.
+
+The standard Browser export path uses compile+archive.
+
+#### Archive list
+
+`list_preference_archives()` scans manifest-bearing sessions.
+
+Valid sessions return summary fields plus source-verification status.
+
+Invalid sessions return:
+
+```json
+{
+  "archive_id": "...",
+  "ok": false,
+  "error": "..."
+}
+```
+
+They remain visible for diagnosis.
+
+#### Replay plan enrichment
+
+M1.8 replay pairs include:
+
+```text
+left_alias
+left_candidate_id
+left_sources
+left_recipe
+
+right_alias
+right_candidate_id
+right_sources
+right_recipe
+
+winner_alias
+winner_candidate_id
+```
+
+Embedding the Candidate Recipe in the plan allows Browser replay of layered Candidates with original gain and offset settings.
+
+#### Browser Archive shelf
+
+Audition Board loads archive summaries at startup and can refresh manually.
+
+Each valid archive provides a Replay action.
+
+Invalid archives display their verification error and do not expose Replay.
+
+#### Browser Verified Replay panel
+
+Opening a replay:
+
+1. refreshes the current audio catalog
+2. requests verified replay from the server
+3. stores the replay plan as transient Browser state
+4. shows archived alias mapping
+5. opens pair 1
+6. permits previous/next pair navigation
+7. permits independent left/right playback
+8. displays the recorded winner for the current pair
+
+Playback hydrates `left_recipe.layers` or `right_recipe.layers` with the existing audio catalog and reuses the normal Web Audio layer renderer.
+
+#### Non-mutating boundary
+
+Archive replay never mutates:
+
+- current Candidate Board
+- Candidate decisions
+- active Recipe
+- Preference Archive Evidence
+- selected winner
+
+It is an observational replay surface.
+
+#### M1.8 acceptance
+
+- Preference Evidence can be archived under `.mgal/preferences`
+- archive identity is deterministic when no ID is supplied
+- repeated identical archive is idempotent
+- explicit ID collision with different Evidence is rejected
+- archive manifest binds Evidence and Candidate Board fingerprints
+- archive verification rechecks source WAV fingerprints
+- invalid source changes make archive verification fail
+- invalid archive remains visible in list result
+- CLI can archive, list, and replay workspace sessions
+- server exposes archive/list/replay APIs
+- Browser standard Evidence action archives and downloads
+- Browser lists archived Preference Sessions
+- Browser refuses Replay when server verification fails
+- Replay returns exact historical pair order and left/right placement
+- Replay returns embedded Candidate Recipes
+- layered gain/offset survive archive replay
+- Browser can navigate previous/next recorded pairs
+- Browser can independently replay left/right Recipe
+- Browser displays recorded pair winner and final winner/tie
+- Replay does not mutate current Candidate Board state
+- existing M1.7 standalone Preference Evidence validation remains supported
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
