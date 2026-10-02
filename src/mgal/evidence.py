@@ -8,6 +8,12 @@ from typing import Any
 
 from .audio import read_wav_metadata
 from .candidate import CandidateBoard, CandidateSnapshot, load_candidate_board
+from .provenance import (
+    ProvenanceLedgerError,
+    source_id_for_hash,
+    subset_ledger_for_source_index,
+    verify_provenance_subset,
+)
 from .recipe import Recipe
 from .render import render_recipe
 
@@ -117,6 +123,7 @@ def _source_index(board: CandidateBoard, audio_root: Path) -> dict[str, Any]:
             {
                 "relative_path": source,
                 "sha256": _sha256(path),
+                "source_id": source_id_for_hash(_sha256(path)),
                 "bytes": path.stat().st_size,
                 "duration_ms": metadata.duration_ms,
                 "sample_rate": metadata.sample_rate,
@@ -148,6 +155,8 @@ def build_evidence_bundle(
     board_path: str | Path,
     audio_root: str | Path,
     output_dir: str | Path,
+    provenance_ledger_path: str | Path | None = None,
+    require_provenance: bool = False,
 ) -> Path:
     board_path = Path(board_path).resolve()
     audio_root = Path(audio_root).resolve()
@@ -166,8 +175,34 @@ def build_evidence_bundle(
     candidates_dir.mkdir(parents=True, exist_ok=True)
 
     _write_json(output_dir / "intent.json", {"intent": board.intent})
-    _write_json(output_dir / "source-index.json", _source_index(board, audio_root))
+    source_index = _source_index(board, audio_root)
+    _write_json(output_dir / "source-index.json", source_index)
     _write_json(output_dir / "candidate-board.json", _board_to_dict(board))
+
+    if require_provenance and provenance_ledger_path is None:
+        raise EvidenceBundleError(
+            "require_provenance needs a provenance ledger"
+        )
+
+    if provenance_ledger_path is not None:
+        try:
+            provenance_subset = subset_ledger_for_source_index(
+                provenance_ledger_path,
+                source_index,
+            )
+        except ProvenanceLedgerError as exc:
+            raise EvidenceBundleError(
+                f"provenance ledger is invalid: {exc}"
+            ) from exc
+
+        if require_provenance and not provenance_subset["complete"]:
+            raise EvidenceBundleError(
+                "referenced sources do not have complete provenance/license metadata"
+            )
+        _write_json(
+            output_dir / "provenance-ledger.json",
+            provenance_subset,
+        )
 
     for index, candidate in enumerate(board.candidates, start=1):
         filename = (
@@ -276,6 +311,30 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
             raise EvidenceBundleError(f"bundle file hash changed: {relative}")
         verified += 1
 
+    provenance_result: dict[str, Any] | None = None
+    provenance_path = bundle_dir / "provenance-ledger.json"
+    if provenance_path.is_file():
+        source_index_path = bundle_dir / "source-index.json"
+        if not source_index_path.is_file():
+            raise EvidenceBundleError(
+                "source-index.json is required when provenance-ledger.json exists"
+            )
+        source_index = json.loads(source_index_path.read_text(encoding="utf-8"))
+        provenance_data = json.loads(provenance_path.read_text(encoding="utf-8"))
+        if not isinstance(source_index, dict):
+            raise EvidenceBundleError("source-index.json must contain an object")
+        if not isinstance(provenance_data, dict):
+            raise EvidenceBundleError("provenance-ledger.json must contain an object")
+        try:
+            provenance_result = verify_provenance_subset(
+                provenance_data,
+                source_index,
+            )
+        except ProvenanceLedgerError as exc:
+            raise EvidenceBundleError(
+                f"bundle provenance validation failed: {exc}"
+            ) from exc
+
     actual_payloads = {
         path.relative_to(bundle_dir).as_posix()
         for path in bundle_dir.rglob("*")
@@ -297,4 +356,5 @@ def verify_evidence_bundle(bundle_dir: str | Path) -> dict[str, Any]:
         "ok": True,
         "files_verified": verified,
         "selected_candidate_id": manifest.get("selected_candidate_id"),
+        "provenance": provenance_result,
     }
