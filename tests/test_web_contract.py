@@ -61,6 +61,18 @@ def test_candidate_board_static_contract():
         "delta-inspector-summary",
         "delta-inspector-stale",
         "delta-inspector-list",
+        "variation-brief-panel",
+        "variation-reference",
+        "variation-hypothesis",
+        "variation-listening-for",
+        "variation-dimension",
+        "variation-action",
+        "variation-amount",
+        "variation-unit",
+        "variation-note",
+        "variation-preserve",
+        "save-variation-brief",
+        "variation-brief-list",
     ):
         assert f'id="{element_id}"' in html
 
@@ -150,6 +162,13 @@ def test_candidate_board_static_contract():
         "mutation_effect",
         "Current − past winner",
         "Current − past loser",
+        "saveVariationBrief",
+        "refreshVariationBriefs",
+        "renderVariationBriefs",
+        "variationReferencePayload",
+        "/api/variation-briefs",
+        "human_explicit",
+        "candidate_generation",
     ):
         assert token in js
 
@@ -467,3 +486,38 @@ def test_delta_inspector_observation_only_ui_contract():
     assert ".delta-inspector-panel" in css
     assert ".delta-inspector-card" in css
     assert ".delta-inspector-reference" in css
+
+
+def test_variation_brief_human_authorship_ui_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "HUMAN HYPOTHESIS" in html
+    assert "Variation Brief" in html
+    assert "What do you want to try, and why?" in html
+    assert "What audible change would make this experiment informative?" in html
+    assert "does not generate or mutate a Recipe" in html
+
+    assert '"/api/variation-briefs"' in js
+    assert "hypothesis: hypothesis" in js
+    assert "listening_for: listeningFor" in js
+    assert "planned_change:" in js
+    assert "preserve:" in js
+    assert "reference: variationReferencePayload()" in js
+    assert 'result.brief.human_input.authorship !== "human_explicit"' in js
+    assert 'result.brief.authority.recipe_mutation !== "none"' in js
+    assert 'result.brief.authority.candidate_selection !== "none"' in js
+    assert 'result.brief.authority.candidate_generation !== "none"' in js
+
+    start = js.index("async function saveVariationBrief()")
+    end = js.index("function syncVariationUnit", start)
+    brief_code = js[start:end]
+    assert "recipePayload()" not in brief_code
+    assert "copyActiveInto" not in brief_code
+    assert "setCandidateDecision" not in brief_code
+    assert "applyPreferenceWinner" not in brief_code
+
+    assert ".variation-brief-panel" in css
+    assert ".variation-change-grid" in css
+    assert ".variation-brief-card" in css
