@@ -2,185 +2,273 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → seed → randomized blind preference → decide → evidence → release**
+**provide → intake → blind preference → preference evidence → replay → final evidence → release**
 
-## Current milestone: M1.6 Randomized Blind / Preference Session
+## Current milestone: M1.7 Preference Session Evidence / Replay
 
-M1.6 removes another comparison bias: the meaning of A/B/C itself.
+M1.7 preserves the evaluation process from M1.6 without polluting Candidate Board 0.1.
 
-A Preference Session temporarily remaps Candidates to random aliases:
+The durable split is now:
 
 ```text
-Candidate A ─┐
-Candidate B ─┼─ random mapping → X / Y / Z
-Candidate C ─┘
+Candidate Board
+= what the creator finally selected
+
+Preference Session Evidence
+= how the randomized blind comparison was conducted
 ```
 
-The mapping is hidden until Reveal.
+## Preference Session Evidence 0.1
 
-## Randomized identity
-
-When a session starts, MGAL:
-
-1. takes up to three current Candidates
-2. shuffles their mapping to X/Y/Z
-3. generates every unique pair
-4. shuffles pair order
-5. randomly swaps left/right position inside each pair
-
-Browser randomness comes from `window.crypto.getRandomValues()`.
-
-For three Candidates, one session contains exactly three pairwise votes:
+After all pair votes are complete and Reveal has happened, the Browser enables:
 
 ```text
-X vs Y
-X vs Z
-Y vs Z
+Download evidence
 ```
 
-The order and left/right presentation are randomized per session.
+The Browser sends the revealed session plus the current Candidate Board snapshot to the local MGAL server.
 
-## Pairwise preference
+The server validates the session and fingerprints the actual WAV files before returning the evidence JSON.
 
-The Preference panel shows only random aliases before Reveal.
-
-```text
-Which sound do you prefer?
-
-X                 Y
-[ Play X ]   vs   [ Play Y ]
-[ Prefer X ]      [ Prefer Y ]
-```
-
-Keyboard shortcuts during an unrevealed session:
+Top-level format:
 
 ```text
-1           play left alias
-2           play right alias
-←           prefer left alias
-→           prefer right alias
-R           reveal, but only after all pairs are voted
-P           close Preference Session
-Esc         stop current audio
-```
-
-Normal Candidate navigation shortcuts are intercepted during pairwise voting so arrow keys cannot accidentally reveal or navigate the underlying Board.
-
-## Identity sealing
-
-Before Reveal, the UI hides:
-
-- original A/B/C identity
-- source filenames/paths
-- Provider/intake/prompt context
-- Candidate lineage and structural delta
-- previous Favorite/Reject/Selected badges
-- Edit and Copy controls
-- decision controls and reason text
-
-The Candidate cards themselves are rendered in randomized X/Y/Z order.
-
-Reveal-before-completion is not allowed.
-
-Board and Recipe download are disabled before Reveal so the user cannot accidentally inspect the underlying Candidate IDs or source paths through exported JSON.
-
-Blind mode cannot be turned off during the hidden phase.
-
-Normal A→B→C sequence and Prev/Next navigation are also disabled until Reveal.
-
-## Reveal
-
-After every pair is voted, Reveal becomes available.
-
-MGAL shows:
-
-```text
-X = Candidate B · 2 wins
-Y = Candidate A · 1 win
-Z = Candidate C · 0 wins
-```
-
-The original Candidate labels and normal Board controls return.
-
-## Preference winner
-
-Scores are simple pairwise win counts.
-
-For three Candidates:
-
-```text
-2 wins / 1 win / 0 wins → single winner
-1 win / 1 win / 1 win → tie
-```
-
-A tie never applies a Candidate decision automatically.
-
-Even with a single winner, MGAL still does not change the Board until the user presses:
-
-```text
-Apply winner
-```
-
-Only then is the winning Candidate assigned the existing durable decision:
-
-```text
-selected
-```
-
-No new score/rating field is added to Candidate Board 0.1.
-
-## Persistence boundary
-
-Preference Session state is intentionally transient:
-
-```text
-X/Y/Z mapping
-pair order
-left/right order
+preference_session_version = 0.1
+candidate_board_sha256
+candidate_board
+mapping
+pairs
 votes
-win counts
-Reveal state
+scores
+winner_candidate_id
+tie
+applied_candidate_id
+source_index
 ```
 
-None of those fields enter Candidate Board JSON.
+## What is captured
 
-If the user closes the Preference Session without Apply winner, the durable Candidate Board remains unchanged.
+### Candidate Board snapshot
 
-If Apply winner is pressed, only the normal `selected` decision changes.
+The complete Candidate Board used when Evidence is compiled is embedded.
 
-## Relationship to M1.5
+A canonical JSON SHA-256 binds the session to that exact Board snapshot.
 
-M1.5 Blind mode hides source context while preserving A/B/C labels.
-
-M1.6 Preference mode goes further:
+### Randomized mapping
 
 ```text
-M1.5
-A / B / C known
-source identity hidden
-
-M1.6
-A / B / C mapping hidden
-source identity hidden
-pair order randomized
-left/right order randomized
+X → candidate-b
+Y → candidate-a
+Z → candidate-c
 ```
 
-Both modes work with Intake-seeded Candidates and manually-forked layered Candidates.
+The exact random alias mapping is preserved.
+
+### Pair schedule
+
+Every comparison stores its actual order and left/right placement:
+
+```text
+pair 0
+left  = Y / candidate-a
+right = X / candidate-b
+
+pair 1
+left  = Z / candidate-c
+right = Y / candidate-a
+```
+
+Replay never generates fresh randomness.
+
+It reuses this recorded schedule.
+
+### Votes
+
+Each pair records:
+
+- pair index
+- winner alias
+- winner Candidate ID
+- loser Candidate ID
+
+Scores are recomputed from votes during validation rather than blindly trusted.
+
+### Result
+
+Evidence stores:
+
+```text
+winner_candidate_id
+tie
+applied_candidate_id
+```
+
+`applied_candidate_id` may remain null if the creator revealed the result but chose not to Apply winner.
+
+If it is present, it must:
+
+- equal the unique preference winner
+- equal the selected Candidate in the embedded Board
+
+## Audio fingerprints
+
+The compiler resolves every source referenced by the compared Candidates beneath the configured audio root.
+
+For each unique source it stores:
+
+```text
+relative_path
+sha256
+bytes
+```
+
+This means Preference Replay can detect a sound file that was replaced after the listening session.
+
+## Browser evidence compilation
+
+The Browser does not author the final evidence document itself.
+
+It POSTs the transient session to:
+
+```text
+POST /api/preference-evidence
+```
+
+The Python compiler performs:
+
+1. Candidate Board validation
+2. X/Y/Z mapping validation
+3. complete pair-combination validation
+4. vote-to-pair identity validation
+5. score and winner recomputation
+6. Apply-winner consistency validation
+7. source path safety checks
+8. WAV byte/hash fingerprinting
+
+Only then is the downloadable Evidence JSON returned.
+
+## CLI validation
+
+```bash
+mgal validate-preference ./heavy-slash-preference-evidence.json
+```
+
+Example report:
+
+```json
+{
+  "ok": true,
+  "candidates": 3,
+  "pairs": 3,
+  "winner_candidate_id": "heavy-slash-b",
+  "tie": false,
+  "applied_candidate_id": "heavy-slash-b",
+  "sources": 3
+}
+```
+
+## Preference Replay
+
+```bash
+mgal replay-preference ./heavy-slash-preference-evidence.json \
+  --audio-root ./audio \
+  --output ./replay-plan.json
+```
+
+Replay first verifies every source byte count and SHA-256.
+
+If a compared WAV changed, replay fails.
+
+On success it reconstructs:
+
+```text
+mapping
+exact pair order
+left/right alias placement
+Candidate IDs
+source paths for each side
+recorded winner for each pair
+final winner / tie
+whether the winner was applied
+```
+
+The output is a deterministic replay plan.
+
+## Attach Preference Evidence to normal Evidence Bundle
+
+Preference Evidence can remain standalone or be included in the normal MGAL Evidence Bundle:
+
+```bash
+mgal bundle candidate-board.json \
+  --audio-root ./audio \
+  --preference-evidence ./heavy-slash-preference-evidence.json \
+  --output ./evidence/session-001
+```
+
+The bundle stores:
+
+```text
+preference-session.json
+```
+
+and includes it in the existing manifest hash/size protection.
+
+`verify-bundle` also revalidates the Preference schema and result logic.
+
+If Preference Evidence says a winner was applied, that Candidate must match the Bundle's selected Candidate.
+
+## Evidence boundaries
+
+M1.7 does not move raw Preference state into Candidate Board.
+
+Candidate Board stays focused on durable creative state:
+
+```text
+Recipes
+lineage
+Favorite / Reject / Selected
+decision reason
+```
+
+Preference Evidence separately records the listening experiment:
+
+```text
+random mapping
+pair schedule
+votes
+score result
+Reveal outcome
+Apply outcome
+audio fingerprints
+```
+
+## Tamper detection
+
+Validation rejects, among other things:
+
+- changed embedded Candidate Board snapshot
+- duplicate pair combinations
+- missing pair combinations
+- winner alias that does not match the pair
+- incorrect loser identity
+- forged score totals
+- forged winner/tie flag
+- Apply winner that disagrees with Board selection
+- duplicate source index paths
+- changed source WAV bytes during replay
 
 ## Current constraints
 
-- Preference Session uses at most three Candidates
-- all pairwise comparisons are one vote each
-- win count is unweighted
-- no undo/back button for a submitted pair vote yet
-- session mapping and votes are lost on page reload
-- no Preference Session JSON export yet
-- no loudness matching yet
-- no automatic statistical significance claim is made
+- Preference Evidence must be compiled after Reveal
+- incomplete sessions are not evidence
+- replay produces a verified replay plan, not browser auto-play yet
+- Preference Evidence has its own 0.1 schema and no migration tooling yet
+- source relinking for Preference Replay is not implemented yet
+- session timing and number of listens are not recorded
+- browser page reload still discards a session that was not exported
 
 ## Design principle
 
-> Randomize what the ear should not know. Persist only what the creator deliberately decides.
+> Final choice and evaluation process are both evidence, but they are different kinds of evidence.
 
-M1.6 turns blind audition into an explicit pairwise preference experiment without changing MGAL's evidence-bearing Candidate Board contract.
+M1.7 preserves the blind listening experiment while keeping Candidate Board clean and reusable.
