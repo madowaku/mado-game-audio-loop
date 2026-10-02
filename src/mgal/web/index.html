@@ -25,6 +25,17 @@
         <button id="refresh-sources" class="secondary" type="button">↻ Refresh sources</button>
         <button id="stop-all" class="secondary" type="button">Stop all</button>
       </div>
+      <section id="intake-sessions" class="intake-sessions" hidden>
+        <div class="intake-sessions-head">
+          <div>
+            <p class="eyebrow">PROVIDER INTAKES</p>
+            <h2>Seed A/B/C from an intake</h2>
+          </div>
+          <span id="intake-session-count" class="count">0</span>
+        </div>
+        <div id="intake-session-list" class="intake-session-list"></div>
+      </section>
+
       <div id="empty" class="empty" hidden>No WAV files found in this audio root.</div>
       <div id="audio-list" class="audio-list"></div>
     </section>
@@ -60,7 +71,10 @@
             <p class="eyebrow">A / B / C</p>
             <h2>Candidate Board</h2>
           </div>
-          <button id="seed-candidates" class="primary compact" type="button" disabled>Fork A/B/C</button>
+          <div class="candidate-section-actions">
+            <button id="clear-board" class="secondary compact" type="button" disabled>Clear board</button>
+            <button id="seed-candidates" class="primary compact" type="button" disabled>Fork A/B/C</button>
+          </div>
         </div>
 
         <p id="candidate-help" class="hint">Build a mix, then fork it into three candidates for rapid comparison.</p>
