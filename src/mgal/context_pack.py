@@ -439,23 +439,6 @@ def validate_decision_context_pack(
             "Decision Context usage boundary is invalid"
         )
 
-    context_pack_id = data.get(
-        "context_pack_id"
-    )
-    if not isinstance(context_pack_id, str):
-        raise DecisionContextError(
-            "Decision Context context_pack_id must be a string"
-        )
-    payload = dict(data)
-    payload.pop("context_pack_id", None)
-    expected_id = (
-        "context:" + _sha256_json(payload)[:20]
-    )
-    if context_pack_id != expected_id:
-        raise DecisionContextError(
-            "Decision Context context_pack_id does not match payload"
-        )
-
     forbidden = {
         "recommended_candidate",
         "auto_select",
@@ -477,6 +460,23 @@ def validate_decision_context_pack(
     if forbidden & serialized_keys:
         raise DecisionContextError(
             "Decision Context contains an automatic-selection field"
+        )
+
+    context_pack_id = data.get(
+        "context_pack_id"
+    )
+    if not isinstance(context_pack_id, str):
+        raise DecisionContextError(
+            "Decision Context context_pack_id must be a string"
+        )
+    payload = dict(data)
+    payload.pop("context_pack_id", None)
+    expected_id = (
+        "context:" + _sha256_json(payload)[:20]
+    )
+    if context_pack_id != expected_id:
+        raise DecisionContextError(
+            "Decision Context context_pack_id does not match payload"
         )
 
     return {
