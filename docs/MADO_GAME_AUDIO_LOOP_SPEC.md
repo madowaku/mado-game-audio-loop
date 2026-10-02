@@ -931,14 +931,190 @@ A Provider may acquire/create audio candidates, but must not choose winners, mut
 - CLI can write Result JSON and Provenance Ledger JSON
 - Python tests and browser JavaScript checks remain green
 
+### MGAL-M1.1 Generated Audio Adapter
+
+Goal:
+
+**Connect one real generated-audio service to Source Provider Contract 1.0 without giving the service authority over MGAL's human-selection or evidence loop.**
+
+M1.1 implements `StabilityAudioProvider` for the hosted Stability AI Stable Audio 3.0 text-to-audio API.
+
+Adapter boundary:
+
+```text
+SourceRequest
+    ↓
+StabilityAudioProvider
+    ↓
+Stable Audio HTTP API
+    ↓
+local WAV
+    ↓
+SourceCandidate
+    ├── content fingerprint
+    ├── audio metadata
+    └── generation provenance
+```
+
+Provider ID:
+
+```text
+stability-audio
+```
+
+Provider kind:
+
+```text
+generated
+```
+
+Model:
+
+```text
+stable-audio-3
+```
+
+The adapter uses the documented async flow:
+
+```text
+POST /v2beta/audio/stable-audio/text-to-audio
+    ↓
+202 generation id
+    ↓
+GET /v2beta/audio/results/{id}
+    ↓
+202 / 200 WAV
+```
+
+Current API constraints encoded by M1.1:
+
+- duration: 1–380 seconds
+- steps: 4–8
+- cfg scale: 1–25
+- WAV output
+- seed range compatible with Stable Audio API
+- seed 0 retains API random-seed semantics
+
+A request shorter than one second is generated at one second and both requested/effective durations are retained in provenance.
+
+Authentication:
+
+```text
+STABILITY_API_KEY
+```
+
+The key is read only from the environment and is never serialized.
+
+Paid-call guard:
+
+```bash
+mgal source-provide \
+  --provider stability \
+  --artifact-root ./audio/generated/stability \
+  --allow-paid \
+  --request-id impact \
+  --intent "short metallic impact" \
+  --count 1
+```
+
+Without `--allow-paid`, generation fails before the API key is loaded or a network request is made.
+
+For CLI use, Stability defaults to one candidate when `--count` is omitted.
+
+`--artifact-root` is mandatory for live generation.
+
+Capability inspection is free and networkless:
+
+```bash
+mgal provider-describe --provider stability
+```
+
+Generation provenance includes:
+
+- source type generated
+- Stability provider ID
+- model
+- prompt
+- effective seed
+- generation ID
+- requested duration
+- API duration
+- steps
+- cfg scale
+- API endpoint
+- current terms URL
+- explicit note that API credentials are not stored
+
+HTTP transport behavior is unit-tested with injected fake responses. CI performs no paid API request.
+
+#### Provenance merge bridge
+
+Generated Provider provenance can be merged with local-source provenance:
+
+```bash
+mgal provenance-merge \
+  local-provenance.json \
+  generated-provenance.json \
+  --output combined-provenance.json
+```
+
+Merge identity is content-addressed `source_id`.
+
+Merge rules:
+
+- unique entries are combined
+- identical duplicates are accepted
+- complete metadata replaces an incomplete duplicate
+- conflicting complete entries fail
+
+This enables mixed local/generated Recipes to use `--require-provenance`.
+
+#### Integration proof
+
+M1.1 CI includes an end-to-end fixture:
+
+```text
+mock Stable Audio candidate
+      +
+local WAV
+      ↓
+merged Provenance Ledger
+      ↓
+mixed selected Recipe
+      ↓
+strict Evidence Bundle
+      ↓
+verify-bundle success
+```
+
+#### M1.1 acceptance
+
+- real Stable Audio 3 text-to-audio HTTP adapter exists
+- async start/poll flow is implemented
+- API key is environment-only
+- API key is never written to Provider Result or provenance
+- paid call requires explicit opt-in
+- Stability CLI defaults to one candidate
+- live generation requires explicit artifact root
+- duration API bounds are enforced
+- sub-second requests record the one-second provider floor
+- seed 0 semantics are preserved
+- WAV response is validated before becoming a candidate
+- generated SourceCandidate satisfies Provider Contract 1.0
+- generated provenance is complete under M0.8 rules
+- Provider provenance can be merged with local provenance
+- local + generated mixed Recipe reaches strict Evidence in CI
+- CI uses no network and spends no provider credits
+- Browser JavaScript checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
 SourceProvider
-  ├── LocalFileProvider
-  ├── GeneratedAudioProvider
-  ├── RecordedAudioProvider
-  └── RecipeProvider
+  ├── LocalFileProvider          implemented
+  ├── StabilityAudioProvider     implemented
+  ├── RecordedAudioProvider      future
+  └── RecipeProvider             future
 \`\`\`
 
 The Source Provider boundary now exists. Production generated, recorded, and recipe adapters can implement it without changing MGAL core.
