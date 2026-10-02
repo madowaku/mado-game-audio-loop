@@ -14,6 +14,9 @@ def test_candidate_board_static_contract():
         "candidate-board",
         "download-board",
         "refresh-sources",
+        "intake-sessions",
+        "intake-session-list",
+        "clear-board",
     ):
         assert f'id="{element_id}"' in html
 
@@ -39,6 +42,11 @@ def test_candidate_board_static_contract():
         "source-type-badge",
         "provider-badge",
         "intake-badge",
+        "intakeGroups",
+        "seedIntakeSession",
+        "renderIntakeSessions",
+        "makeLayerFromRecipeLayer",
+        "/seed-board",
     ):
         assert token in js
 
@@ -64,3 +72,16 @@ def test_audition_board_has_intake_metadata_slots():
         assert f'class="{class_name}"' in html or f".{class_name}" in css
 
     assert "intake-card" in css
+
+
+def test_intake_seed_ui_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "Seed A/B/C from an intake" in html
+    assert "Clear board" in html
+    assert "first 3 seed" in js
+    assert "state.candidates.length > 0" in js
+    assert ".intake-session-card" in css
+    assert ".intake-seed" in css
