@@ -5,10 +5,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 import webbrowser
 
 from .audio import read_wav_metadata
+from .context_pack import (
+    DecisionContextError,
+    build_decision_context_pack,
+)
 from .decision_memory import (
     DecisionMemoryError,
     decision_memory_view,
@@ -129,6 +133,38 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 try:
                     payload = decision_memory_view(root)
                 except DecisionMemoryError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
+                return
+
+            if parsed.path == "/api/decision-context":
+                params = parse_qs(parsed.query)
+                intent_values = params.get("intent", [])
+                limit_values = params.get("limit", ["6"])
+                intent_value = (
+                    intent_values[0]
+                    if intent_values
+                    else ""
+                )
+                try:
+                    limit_value = int(limit_values[0])
+                except (TypeError, ValueError):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "decision context limit must be an integer",
+                    )
+                    return
+                try:
+                    payload = build_decision_context_pack(
+                        root,
+                        intent_value,
+                        limit=limit_value,
+                    )
+                except DecisionContextError as exc:
                     self._send_json_error(
                         HTTPStatus.BAD_REQUEST,
                         str(exc),
