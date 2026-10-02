@@ -272,12 +272,14 @@ def _seed_for_candidate(seed: str | None, ordinal: int) -> int:
 
         digest = hashlib.sha256(raw.encode("utf-8")).digest()
         base = int.from_bytes(digest[:4], "big")
+        if base == 0:
+            base = 1
+    else:
+        if base == 0:
+            return 0
 
     if base < 0:
         base = abs(base)
-    if base == 0:
-        base = 1
-
     value = ((base - 1 + ordinal - 1) % MAX_SEED) + 1
     return value
 
