@@ -15,6 +15,9 @@ const state = {
   sequenceTimer: null,
   playbackToken: 0,
   preferenceSession: null,
+  preferenceArchives: [],
+  preferenceReplay: null,
+  preferenceReplayPairIndex: 0,
 };
 
 const list = document.querySelector("#audio-list");
@@ -60,6 +63,25 @@ const preferenceRevealButton = document.querySelector("#preference-reveal-button
 const preferenceApply = document.querySelector("#preference-apply");
 const preferenceEvidence = document.querySelector("#preference-evidence");
 const preferenceClose = document.querySelector("#preference-close");
+const preferenceArchive = document.querySelector("#preference-archive");
+const preferenceArchiveList = document.querySelector("#preference-archive-list");
+const preferenceArchiveEmpty = document.querySelector("#preference-archive-empty");
+const refreshPreferenceArchiveButton = document.querySelector("#refresh-preference-archive");
+const preferenceReplayPanel = document.querySelector("#preference-replay-panel");
+const preferenceReplayTitle = document.querySelector("#preference-replay-title");
+const preferenceReplayResult = document.querySelector("#preference-replay-result");
+const preferenceReplayMapping = document.querySelector("#preference-replay-mapping");
+const preferenceReplayPrev = document.querySelector("#preference-replay-prev");
+const preferenceReplayNext = document.querySelector("#preference-replay-next");
+const preferenceReplayPosition = document.querySelector("#preference-replay-position");
+const preferenceReplayLeftLabel = document.querySelector("#preference-replay-left-label");
+const preferenceReplayRightLabel = document.querySelector("#preference-replay-right-label");
+const preferenceReplayLeftCandidate = document.querySelector("#preference-replay-left-candidate");
+const preferenceReplayRightCandidate = document.querySelector("#preference-replay-right-candidate");
+const preferenceReplayLeftPlay = document.querySelector("#preference-replay-left-play");
+const preferenceReplayRightPlay = document.querySelector("#preference-replay-right-play");
+const preferenceReplayVote = document.querySelector("#preference-replay-vote");
+const closePreferenceReplayButton = document.querySelector("#close-preference-replay");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -1284,23 +1306,25 @@ async function downloadPreferenceEvidence() {
   if (!payload) return;
 
   preferenceEvidence.disabled = true;
-  preferenceEvidence.textContent = "Compiling…";
+  preferenceEvidence.textContent = "Archiving…";
 
   try {
-    const response = await fetch("/api/preference-evidence", {
+    const response = await fetch("/api/preference-archive", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
     });
-    const evidence = await response.json();
+    const result = await response.json();
     if (!response.ok) {
       throw new Error(
-        evidence.error || "Could not compile preference evidence"
+        result.error || "Could not archive preference evidence"
       );
     }
 
+    const evidence = result.evidence;
+    const archive = result.archive;
     const baseId = evidence.candidate_board &&
       evidence.candidate_board.base_recipe
       ? evidence.candidate_board.base_recipe.id
@@ -1309,20 +1333,243 @@ async function downloadPreferenceEvidence() {
       evidence,
       baseId + "-preference-evidence.json"
     );
+    await refreshPreferenceArchive({ quiet: true });
     status.textContent =
-      "Preference evidence compiled · " +
-      String(evidence.pairs.length) +
-      " pair votes";
+      "Preference archived · " +
+      archive.archive_id +
+      (archive.reused ? " · reused" : "");
   } catch (error) {
     status.textContent =
-      "Preference evidence failed: " + error.message;
+      "Preference archive failed: " + error.message;
   } finally {
-    preferenceEvidence.textContent = "Download evidence";
+    preferenceEvidence.textContent = "Archive + download";
     preferenceEvidence.disabled = !(
       state.preferenceSession &&
       state.preferenceSession.revealed
     );
   }
+}
+
+function renderPreferenceArchive() {
+  preferenceArchiveList.replaceChildren();
+  preferenceArchiveEmpty.hidden = state.preferenceArchives.length > 0;
+
+  state.preferenceArchives.forEach(function (entry) {
+    const card = document.createElement("article");
+    card.className =
+      "preference-archive-card" +
+      (entry.ok === false ? " invalid" : "");
+
+    const meta = document.createElement("div");
+    meta.className = "preference-archive-meta";
+
+    const title = document.createElement("strong");
+    title.textContent = entry.archive_id || "unknown archive";
+
+    const detail = document.createElement("span");
+    if (entry.ok === false) {
+      detail.textContent = entry.error || "Archive validation failed";
+    } else {
+      const resultText = entry.tie
+        ? "tie"
+        : "winner " + (entry.winner_candidate_id || "?");
+      detail.textContent =
+        String(entry.pair_count) +
+        " pairs · " +
+        String(entry.source_count) +
+        " sources · " +
+        resultText +
+        (entry.applied_candidate_id
+          ? " · applied " + entry.applied_candidate_id
+          : " · not applied");
+    }
+
+    meta.append(title, detail);
+    card.appendChild(meta);
+
+    if (entry.ok !== false) {
+      const replay = document.createElement("button");
+      replay.type = "button";
+      replay.className = "secondary compact";
+      replay.textContent = "Replay";
+      replay.addEventListener("click", function () {
+        openPreferenceReplay(entry.archive_id, replay);
+      });
+      card.appendChild(replay);
+    }
+
+    preferenceArchiveList.appendChild(card);
+  });
+}
+
+async function refreshPreferenceArchive(options) {
+  const quiet = Boolean(options && options.quiet);
+  if (!quiet) {
+    refreshPreferenceArchiveButton.disabled = true;
+    refreshPreferenceArchiveButton.textContent = "Refreshing…";
+  }
+
+  try {
+    const response = await fetch("/api/preferences", {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error("HTTP " + String(response.status));
+    }
+    state.preferenceArchives = await response.json();
+    renderPreferenceArchive();
+  } catch (error) {
+    if (!quiet) {
+      status.textContent =
+        "Preference archive refresh failed: " + error.message;
+    }
+  } finally {
+    if (!quiet) {
+      refreshPreferenceArchiveButton.disabled = false;
+      refreshPreferenceArchiveButton.textContent = "↻ Refresh";
+    }
+  }
+}
+
+async function openPreferenceReplay(archiveId, button) {
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Verifying…";
+  }
+
+  try {
+    await refreshCatalog({ quiet: true });
+    const response = await fetch(
+      "/api/preferences/" +
+      encodeURIComponent(archiveId) +
+      "/replay",
+      { cache: "no-store" }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not verify preference replay"
+      );
+    }
+
+    state.preferenceReplay = result;
+    state.preferenceReplayPairIndex = 0;
+    preferenceReplayPanel.hidden = false;
+    renderPreferenceReplay();
+    status.textContent =
+      "Preference replay verified · " +
+      String(result.sources_verified) +
+      " sources";
+  } catch (error) {
+    status.textContent =
+      "Preference replay failed: " + error.message;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Replay";
+    }
+  }
+}
+
+function currentPreferenceReplayPair() {
+  const replay = state.preferenceReplay;
+  if (!replay) return null;
+  return replay.replay_pairs[
+    state.preferenceReplayPairIndex
+  ] || null;
+}
+
+function renderPreferenceReplay() {
+  const replay = state.preferenceReplay;
+  if (!replay) {
+    preferenceReplayPanel.hidden = true;
+    return;
+  }
+
+  const pair = currentPreferenceReplayPair();
+  preferenceReplayPanel.hidden = false;
+  preferenceReplayTitle.textContent =
+    "Replay · " + replay.archive_id;
+  preferenceReplayResult.textContent = replay.tie
+    ? "Archived result: tie"
+    : "Archived winner: " +
+      replay.winner_candidate_id +
+      (replay.applied_candidate_id
+        ? " · applied " + replay.applied_candidate_id
+        : " · not applied");
+
+  preferenceReplayMapping.replaceChildren();
+  replay.mapping.forEach(function (entry) {
+    const chip = document.createElement("span");
+    chip.className = "preference-replay-chip";
+    chip.textContent =
+      entry.alias + " = " + entry.candidate_id;
+    preferenceReplayMapping.appendChild(chip);
+  });
+
+  const count = replay.replay_pairs.length;
+  const index = state.preferenceReplayPairIndex;
+  preferenceReplayPosition.textContent =
+    String(index + 1) + " / " + String(count);
+  preferenceReplayPrev.disabled = index <= 0;
+  preferenceReplayNext.disabled = index >= count - 1;
+
+  if (!pair) return;
+
+  preferenceReplayLeftLabel.textContent =
+    pair.left_alias;
+  preferenceReplayRightLabel.textContent =
+    pair.right_alias;
+  preferenceReplayLeftCandidate.textContent =
+    pair.left_candidate_id;
+  preferenceReplayRightCandidate.textContent =
+    pair.right_candidate_id;
+  preferenceReplayLeftPlay.textContent =
+    "▶ Play " + pair.left_alias;
+  preferenceReplayRightPlay.textContent =
+    "▶ Play " + pair.right_alias;
+  preferenceReplayVote.textContent =
+    "Recorded preference: " +
+    pair.winner_alias +
+    " · " +
+    pair.winner_candidate_id;
+}
+
+function replayRecipeLayers(recipe) {
+  if (!recipe || !Array.isArray(recipe.layers)) {
+    throw new Error("Replay recipe is missing layers");
+  }
+  return recipe.layers.map(makeLayerFromRecipeLayer);
+}
+
+async function playPreferenceReplaySide(side) {
+  const pair = currentPreferenceReplayPair();
+  if (!pair) return;
+
+  const recipe =
+    side === "left"
+      ? pair.left_recipe
+      : pair.right_recipe;
+  const alias =
+    side === "left"
+      ? pair.left_alias
+      : pair.right_alias;
+  const layers = replayRecipeLayers(recipe);
+
+  status.textContent =
+    "Preference replay · playing " + alias;
+  await playLayerSet(layers, {
+    owner: "preference-replay-" + side,
+    respectAudition: false,
+  });
+}
+
+function closePreferenceReplay() {
+  stopAll();
+  state.preferenceReplay = null;
+  state.preferenceReplayPairIndex = 0;
+  preferenceReplayPanel.hidden = true;
+  status.textContent = "Preference replay closed";
 }
 
 function copyActiveInto(targetId) {
@@ -1634,6 +1881,34 @@ preferenceRevealButton.addEventListener("click", revealPreferenceSession);
 preferenceApply.addEventListener("click", applyPreferenceWinner);
 preferenceEvidence.addEventListener("click", downloadPreferenceEvidence);
 preferenceClose.addEventListener("click", closePreferenceSession);
+refreshPreferenceArchiveButton.addEventListener("click", function () {
+  refreshPreferenceArchive({ quiet: false });
+});
+preferenceReplayPrev.addEventListener("click", function () {
+  if (!state.preferenceReplay) return;
+  state.preferenceReplayPairIndex = Math.max(
+    0,
+    state.preferenceReplayPairIndex - 1
+  );
+  stopAll();
+  renderPreferenceReplay();
+});
+preferenceReplayNext.addEventListener("click", function () {
+  if (!state.preferenceReplay) return;
+  state.preferenceReplayPairIndex = Math.min(
+    state.preferenceReplay.replay_pairs.length - 1,
+    state.preferenceReplayPairIndex + 1
+  );
+  stopAll();
+  renderPreferenceReplay();
+});
+preferenceReplayLeftPlay.addEventListener("click", function () {
+  playPreferenceReplaySide("left");
+});
+preferenceReplayRightPlay.addEventListener("click", function () {
+  playPreferenceReplaySide("right");
+});
+closePreferenceReplayButton.addEventListener("click", closePreferenceReplay);
 
 clearBoardButton.addEventListener("click", function () {
   stopAll();
@@ -1836,6 +2111,7 @@ refreshSourcesButton.addEventListener("click", function () {
 
 async function boot() {
   await refreshCatalog({ quiet: false });
+  await refreshPreferenceArchive({ quiet: true });
   updateAuditionControls();
   renderRecipe();
   renderCandidates();
