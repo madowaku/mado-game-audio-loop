@@ -297,6 +297,98 @@ def write_provider_result(result: ProviderResult, output_path: str | Path) -> Pa
     return output
 
 
+def provider_result_from_dict(data: dict[str, Any]) -> ProviderResult:
+    if not isinstance(data, dict):
+        raise SourceProviderError("Provider Result must be an object")
+
+    request_data = data.get("request")
+    candidates_data = data.get("candidates")
+    if not isinstance(request_data, dict):
+        raise SourceProviderError("Provider Result request must be an object")
+    if not isinstance(candidates_data, list):
+        raise SourceProviderError("Provider Result candidates must be a list")
+
+    hints = request_data.get("hints", [])
+    if not isinstance(hints, (list, tuple)) or not all(
+        isinstance(item, str) for item in hints
+    ):
+        raise SourceProviderError("SourceRequest hints must be strings")
+
+    request = SourceRequest(
+        request_id=request_data.get("request_id", ""),
+        intent=request_data.get("intent", ""),
+        count=request_data.get("count", 0),
+        hints=tuple(hints),
+        duration_ms=request_data.get("duration_ms"),
+        seed=request_data.get("seed"),
+    )
+
+    candidates: list[SourceCandidate] = []
+    for index, item in enumerate(candidates_data):
+        if not isinstance(item, dict):
+            raise SourceProviderError(
+                f"Provider Result candidates[{index}] must be an object"
+            )
+        provenance = item.get("provenance")
+        if not isinstance(provenance, dict):
+            raise SourceProviderError(
+                f"Provider Result candidates[{index}].provenance must be an object"
+            )
+        try:
+            candidate = SourceCandidate(
+                candidate_id=item["candidate_id"],
+                provider_id=item["provider_id"],
+                provider_kind=item["provider_kind"],
+                relative_path=item["relative_path"],
+                source_id=item["source_id"],
+                sha256=item["sha256"],
+                bytes=item["bytes"],
+                duration_ms=item["duration_ms"],
+                sample_rate=item["sample_rate"],
+                channels=item["channels"],
+                sample_width=item["sample_width"],
+                frames=item["frames"],
+                provenance=provenance,
+            )
+        except KeyError as exc:
+            raise SourceProviderError(
+                f"Provider Result candidate missing field: {exc.args[0]}"
+            ) from exc
+        candidates.append(candidate)
+
+    result = ProviderResult(
+        source_provider_contract_version=data.get(
+            "source_provider_contract_version",
+            "",
+        ),
+        provider_id=data.get("provider_id", ""),
+        provider_kind=data.get("provider_kind", ""),
+        artifact_root=data.get("artifact_root", ""),
+        request=request,
+        candidates=tuple(candidates),
+    )
+
+    declared_count = data.get("candidate_count")
+    if declared_count is not None and declared_count != len(candidates):
+        raise SourceProviderError(
+            "Provider Result candidate_count does not match candidates"
+        )
+
+    validate_provider_result(result)
+    return result
+
+
+def load_provider_result(path: str | Path) -> ProviderResult:
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SourceProviderError(
+            f"Provider Result contains invalid JSON: {path}"
+        ) from exc
+    return provider_result_from_dict(data)
+
+
 def _search_tokens(request: SourceRequest) -> tuple[str, ...]:
     explicit = [hint.strip().lower() for hint in request.hints if hint.strip()]
     if explicit:
