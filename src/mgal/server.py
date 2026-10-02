@@ -13,6 +13,10 @@ from .context_pack import (
     DecisionContextError,
     build_decision_context_pack,
 )
+from .delta_inspector import (
+    DeltaInspectorError,
+    build_delta_inspector_pack,
+)
 from .decision_memory import (
     DecisionMemoryError,
     decision_memory_view,
@@ -245,6 +249,68 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+
+            if parsed.path == "/api/decision-context-inspect":
+                raw_length = self.headers.get("Content-Length")
+                try:
+                    content_length = int(raw_length or "0")
+                except ValueError:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "invalid Content-Length",
+                    )
+                    return
+
+                if content_length <= 0 or content_length > 2_000_000:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "delta inspector payload size is invalid",
+                    )
+                    return
+
+                try:
+                    body = self.rfile.read(content_length)
+                    request_data = json.loads(
+                        body.decode("utf-8")
+                    )
+                except (
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                ):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must be valid JSON",
+                    )
+                    return
+
+                if not isinstance(request_data, dict):
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        "request body must contain an object",
+                    )
+                    return
+
+                context_pack = request_data.get(
+                    "context_pack"
+                )
+                current_recipe = request_data.get(
+                    "current_recipe"
+                )
+                try:
+                    payload = build_delta_inspector_pack(
+                        root,
+                        context_pack,
+                        current_recipe,
+                    )
+                except DeltaInspectorError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+
+                self._send_json(payload)
+                return
 
             if (
                 parsed.path.startswith("/api/preferences/")
