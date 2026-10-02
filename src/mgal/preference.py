@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from .candidate import CandidateBoardError, parse_candidate_board
@@ -657,6 +658,48 @@ def replay_preference_evidence(
     audio_root: str | Path,
 ) -> dict[str, Any]:
     data = load_preference_evidence(evidence_path)
+    return _replay_preference_data(
+        data,
+        audio_root,
+    )
+
+
+PREFERENCE_ARCHIVE_VERSION = "0.1"
+
+
+def _archive_slug(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return cleaned or "preference"
+
+
+def _preference_evidence_hash(data: dict[str, Any]) -> str:
+    return _sha256_bytes(_canonical_json_bytes(data))
+
+
+def _candidate_recipe_payloads(
+    board_data: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    raw_candidates = board_data.get("candidates")
+    if not isinstance(raw_candidates, list):
+        raise PreferenceEvidenceError(
+            "candidate board candidates must be a list"
+        )
+    for item in raw_candidates:
+        if not isinstance(item, dict):
+            continue
+        candidate_id = item.get("id")
+        recipe = item.get("recipe")
+        if isinstance(candidate_id, str) and isinstance(recipe, dict):
+            result[candidate_id] = recipe
+    return result
+
+
+def _replay_preference_data(
+    data: dict[str, Any],
+    audio_root: str | Path,
+) -> dict[str, Any]:
+    validate_preference_evidence(data)
     audio_root_path = Path(audio_root).resolve()
 
     source_index = data["source_index"]
@@ -683,23 +726,24 @@ def replay_preference_evidence(
         board_data,
         candidate_ids,
     )
+    recipes_by_candidate = _candidate_recipe_payloads(board_data)
 
     replay_pairs: list[dict[str, Any]] = []
     for pair in data["pairs"]:
         vote = data["votes"][pair["index"]]
+        left_id = pair["left_candidate_id"]
+        right_id = pair["right_candidate_id"]
         replay_pairs.append(
             {
                 "pair_index": pair["index"],
                 "left_alias": pair["left_alias"],
-                "left_candidate_id": pair["left_candidate_id"],
-                "left_sources": sources_by_candidate[
-                    pair["left_candidate_id"]
-                ],
+                "left_candidate_id": left_id,
+                "left_sources": sources_by_candidate[left_id],
+                "left_recipe": recipes_by_candidate[left_id],
                 "right_alias": pair["right_alias"],
-                "right_candidate_id": pair["right_candidate_id"],
-                "right_sources": sources_by_candidate[
-                    pair["right_candidate_id"]
-                ],
+                "right_candidate_id": right_id,
+                "right_sources": sources_by_candidate[right_id],
+                "right_recipe": recipes_by_candidate[right_id],
                 "winner_alias": vote["winner_alias"],
                 "winner_candidate_id": vote["winner_candidate_id"],
             }
@@ -720,3 +764,288 @@ def replay_preference_evidence(
         "tie": data["tie"],
         "applied_candidate_id": data["applied_candidate_id"],
     }
+
+
+def preference_archive_root(
+    audio_root: str | Path,
+) -> Path:
+    return Path(audio_root).resolve() / ".mgal" / "preferences"
+
+
+def archive_preference_evidence(
+    evidence: dict[str, Any],
+    audio_root: str | Path,
+    *,
+    archive_id: str | None = None,
+) -> dict[str, Any]:
+    validate_preference_evidence(evidence)
+    replay = _replay_preference_data(
+        evidence,
+        audio_root,
+    )
+
+    board = evidence["candidate_board"]
+    base_recipe = board.get("base_recipe")
+    base_id = (
+        base_recipe.get("id")
+        if isinstance(base_recipe, dict)
+        else "preference"
+    )
+    if not isinstance(base_id, str):
+        base_id = "preference"
+
+    evidence_hash = _preference_evidence_hash(evidence)
+    resolved_id = _archive_slug(
+        archive_id
+        or f"{base_id}-{evidence_hash[:12]}"
+    )
+    root = preference_archive_root(audio_root)
+    session_dir = (root / resolved_id).resolve()
+    try:
+        session_dir.relative_to(root.resolve())
+    except ValueError as exc:
+        raise PreferenceEvidenceError(
+            "preference archive id escapes archive root"
+        ) from exc
+
+    evidence_path = session_dir / "evidence.json"
+    manifest_path = session_dir / "manifest.json"
+
+    if manifest_path.is_file() or evidence_path.is_file():
+        if not (manifest_path.is_file() and evidence_path.is_file()):
+            raise PreferenceEvidenceError(
+                f"preference archive is incomplete: {resolved_id}"
+            )
+        existing_manifest = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        if (
+            not isinstance(existing_manifest, dict)
+            or existing_manifest.get("evidence_sha256")
+            != evidence_hash
+        ):
+            raise PreferenceEvidenceError(
+                f"preference archive id already exists for different evidence: {resolved_id}"
+            )
+        verify_preference_archive(
+            audio_root,
+            resolved_id,
+        )
+        return {
+            "ok": True,
+            "archive_id": resolved_id,
+            "archive_dir": str(session_dir),
+            "evidence_path": str(evidence_path),
+            "reused": True,
+        }
+
+    session_dir.mkdir(parents=True, exist_ok=False)
+    evidence_path.write_text(
+        json.dumps(
+            evidence,
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    manifest = {
+        "preference_archive_version": PREFERENCE_ARCHIVE_VERSION,
+        "archive_id": resolved_id,
+        "evidence_sha256": evidence_hash,
+        "candidate_board_sha256": evidence[
+            "candidate_board_sha256"
+        ],
+        "candidate_count": len(evidence["mapping"]),
+        "pair_count": len(evidence["pairs"]),
+        "source_count": evidence["source_index"][
+            "source_count"
+        ],
+        "winner_candidate_id": evidence[
+            "winner_candidate_id"
+        ],
+        "tie": evidence["tie"],
+        "applied_candidate_id": evidence[
+            "applied_candidate_id"
+        ],
+    }
+    manifest_path.write_text(
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    verify_preference_archive(
+        audio_root,
+        resolved_id,
+    )
+
+    return {
+        "ok": True,
+        "archive_id": resolved_id,
+        "archive_dir": str(session_dir),
+        "evidence_path": str(evidence_path),
+        "reused": False,
+        "sources_verified": replay["sources_verified"],
+    }
+
+
+def _resolve_archive_session(
+    audio_root: str | Path,
+    archive_id: str,
+) -> Path:
+    root = preference_archive_root(audio_root).resolve()
+    session_dir = (root / archive_id).resolve()
+    try:
+        session_dir.relative_to(root)
+    except ValueError as exc:
+        raise PreferenceEvidenceError(
+            "preference archive id escapes archive root"
+        ) from exc
+    if not session_dir.is_dir():
+        raise PreferenceEvidenceError(
+            f"preference archive does not exist: {archive_id}"
+        )
+    return session_dir
+
+
+def verify_preference_archive(
+    audio_root: str | Path,
+    archive_id: str,
+) -> dict[str, Any]:
+    session_dir = _resolve_archive_session(
+        audio_root,
+        archive_id,
+    )
+    manifest_path = session_dir / "manifest.json"
+    evidence_path = session_dir / "evidence.json"
+    if not manifest_path.is_file() or not evidence_path.is_file():
+        raise PreferenceEvidenceError(
+            f"preference archive is incomplete: {archive_id}"
+        )
+
+    manifest = json.loads(
+        manifest_path.read_text(encoding="utf-8")
+    )
+    if not isinstance(manifest, dict):
+        raise PreferenceEvidenceError(
+            "preference archive manifest must be an object"
+        )
+    if (
+        manifest.get("preference_archive_version")
+        != PREFERENCE_ARCHIVE_VERSION
+    ):
+        raise PreferenceEvidenceError(
+            "unsupported preference_archive_version"
+        )
+    if manifest.get("archive_id") != archive_id:
+        raise PreferenceEvidenceError(
+            "preference archive manifest id mismatch"
+        )
+
+    evidence = load_preference_evidence(evidence_path)
+    evidence_hash = _preference_evidence_hash(evidence)
+    if manifest.get("evidence_sha256") != evidence_hash:
+        raise PreferenceEvidenceError(
+            "preference archive evidence hash mismatch"
+        )
+    if (
+        manifest.get("candidate_board_sha256")
+        != evidence["candidate_board_sha256"]
+    ):
+        raise PreferenceEvidenceError(
+            "preference archive board hash mismatch"
+        )
+
+    replay = _replay_preference_data(
+        evidence,
+        audio_root,
+    )
+    return {
+        "ok": True,
+        "archive_id": archive_id,
+        "candidate_count": len(evidence["mapping"]),
+        "pair_count": len(evidence["pairs"]),
+        "source_count": evidence["source_index"][
+            "source_count"
+        ],
+        "sources_verified": replay["sources_verified"],
+        "winner_candidate_id": evidence[
+            "winner_candidate_id"
+        ],
+        "tie": evidence["tie"],
+        "applied_candidate_id": evidence[
+            "applied_candidate_id"
+        ],
+    }
+
+
+def list_preference_archives(
+    audio_root: str | Path,
+) -> list[dict[str, Any]]:
+    root = preference_archive_root(audio_root)
+    if not root.is_dir():
+        return []
+
+    result: list[dict[str, Any]] = []
+    for manifest_path in sorted(root.glob("*/manifest.json")):
+        archive_id = manifest_path.parent.name
+        try:
+            report = verify_preference_archive(
+                audio_root,
+                archive_id,
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+            PreferenceEvidenceError,
+        ) as exc:
+            result.append(
+                {
+                    "archive_id": archive_id,
+                    "ok": False,
+                    "error": str(exc),
+                }
+            )
+            continue
+
+        result.append(report)
+    return result
+
+
+def load_preference_archive(
+    audio_root: str | Path,
+    archive_id: str,
+) -> dict[str, Any]:
+    verify_preference_archive(
+        audio_root,
+        archive_id,
+    )
+    session_dir = _resolve_archive_session(
+        audio_root,
+        archive_id,
+    )
+    return load_preference_evidence(
+        session_dir / "evidence.json"
+    )
+
+
+def replay_preference_archive(
+    audio_root: str | Path,
+    archive_id: str,
+) -> dict[str, Any]:
+    evidence = load_preference_archive(
+        audio_root,
+        archive_id,
+    )
+    replay = _replay_preference_data(
+        evidence,
+        audio_root,
+    )
+    replay["archive_id"] = archive_id
+    return replay
