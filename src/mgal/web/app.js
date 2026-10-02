@@ -58,6 +58,7 @@ const preferenceRightVote = document.querySelector("#preference-right-vote");
 const preferenceReveal = document.querySelector("#preference-reveal");
 const preferenceRevealButton = document.querySelector("#preference-reveal-button");
 const preferenceApply = document.querySelector("#preference-apply");
+const preferenceEvidence = document.querySelector("#preference-evidence");
 const preferenceClose = document.querySelector("#preference-close");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -1077,6 +1078,7 @@ function startPreferenceSession() {
     votes: [],
     revealed: false,
     applied: false,
+    appliedCandidateId: null,
   };
   state.blindMode = true;
   preferencePanel.hidden = false;
@@ -1156,6 +1158,7 @@ function applyPreferenceWinner() {
   if (!winner) return;
   winner.decision = "selected";
   session.applied = true;
+  session.appliedCandidateId = winner.id;
   state.activeCandidateId = winner.id;
   state.selected = winner.layers;
 
@@ -1184,6 +1187,7 @@ function renderPreferenceSession() {
     preferenceReveal.hidden = true;
     preferenceRevealButton.disabled = true;
     preferenceApply.disabled = true;
+    preferenceEvidence.disabled = true;
     preferenceTitle.textContent = "Which sound do you prefer?";
     preferenceMessage.textContent =
       "Pair " +
@@ -1203,6 +1207,7 @@ function renderPreferenceSession() {
 
   preferencePair.hidden = true;
   preferenceRevealButton.disabled = session.revealed;
+  preferenceEvidence.disabled = !session.revealed;
   preferenceTitle.textContent = session.revealed
     ? "Preference reveal"
     : "Voting complete";
@@ -1213,6 +1218,7 @@ function renderPreferenceSession() {
   if (!session.revealed) {
     preferenceReveal.hidden = true;
     preferenceApply.disabled = true;
+    preferenceEvidence.disabled = true;
     return;
   }
 
@@ -1256,6 +1262,67 @@ function renderPreferenceSession() {
   preferenceReveal.appendChild(verdict);
 
   preferenceApply.disabled = !winnerId || session.applied;
+}
+
+function preferenceEvidenceRequest() {
+  const session = state.preferenceSession;
+  if (!session || !session.revealed) return null;
+  return {
+    candidate_board: boardPayload(),
+    preference: {
+      mapping: session.mapping,
+      pairs: session.pairs,
+      votes: session.votes,
+      revealed: session.revealed,
+      appliedCandidateId: session.appliedCandidateId,
+    },
+  };
+}
+
+async function downloadPreferenceEvidence() {
+  const payload = preferenceEvidenceRequest();
+  if (!payload) return;
+
+  preferenceEvidence.disabled = true;
+  preferenceEvidence.textContent = "Compiling…";
+
+  try {
+    const response = await fetch("/api/preference-evidence", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const evidence = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        evidence.error || "Could not compile preference evidence"
+      );
+    }
+
+    const baseId = evidence.candidate_board &&
+      evidence.candidate_board.base_recipe
+      ? evidence.candidate_board.base_recipe.id
+      : "preference";
+    downloadJson(
+      evidence,
+      baseId + "-preference-evidence.json"
+    );
+    status.textContent =
+      "Preference evidence compiled · " +
+      String(evidence.pairs.length) +
+      " pair votes";
+  } catch (error) {
+    status.textContent =
+      "Preference evidence failed: " + error.message;
+  } finally {
+    preferenceEvidence.textContent = "Download evidence";
+    preferenceEvidence.disabled = !(
+      state.preferenceSession &&
+      state.preferenceSession.revealed
+    );
+  }
 }
 
 function copyActiveInto(targetId) {
@@ -1565,6 +1632,7 @@ preferenceRightVote.addEventListener("click", function () {
 });
 preferenceRevealButton.addEventListener("click", revealPreferenceSession);
 preferenceApply.addEventListener("click", applyPreferenceWinner);
+preferenceEvidence.addEventListener("click", downloadPreferenceEvidence);
 preferenceClose.addEventListener("click", closePreferenceSession);
 
 clearBoardButton.addEventListener("click", function () {
