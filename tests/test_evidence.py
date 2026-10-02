@@ -10,6 +10,10 @@ from mgal.evidence import (
     build_evidence_bundle,
     verify_evidence_bundle,
 )
+from mgal.provenance import (
+    update_provenance_entry,
+    write_provenance_ledger,
+)
 
 
 def _write_wav(path: Path, value: int) -> None:
@@ -156,3 +160,85 @@ def test_verify_rejects_untracked_bundle_payload(tmp_path: Path):
 
     with pytest.raises(EvidenceBundleError, match="payload set"):
         verify_evidence_bundle(bundle)
+
+
+def _complete_provenance(audio_root: Path, output: Path) -> Path:
+    ledger = write_provenance_ledger(audio_root, output)
+    update_provenance_entry(
+        ledger,
+        "metal.wav",
+        source_type="free_library",
+        creator="Fixture Author",
+        title="Metal Fixture",
+        origin_url="https://example.invalid/metal",
+        license_status="declared",
+        license_expression="CC0-1.0",
+        license_url="https://example.invalid/license",
+        attribution="Fixture Author",
+    )
+    update_provenance_entry(
+        ledger,
+        "impact.wav",
+        source_type="recorded",
+        license_status="owned",
+        recorded_by="MGAL fixture",
+        recorded_at="2026-10-02",
+        device="procedural test writer",
+    )
+    return ledger
+
+
+def test_bundle_can_embed_complete_provenance_ledger(tmp_path: Path):
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    _write_wav(audio_root / "metal.wav", 400)
+    _write_wav(audio_root / "impact.wav", 900)
+    board_path = tmp_path / "board.json"
+    board_path.write_text(json.dumps(_board()), encoding="utf-8")
+    ledger = _complete_provenance(audio_root, tmp_path / "provenance.json")
+
+    bundle = build_evidence_bundle(
+        board_path,
+        audio_root,
+        tmp_path / "bundle",
+        provenance_ledger_path=ledger,
+        require_provenance=True,
+    )
+
+    provenance = json.loads(
+        (bundle / "provenance-ledger.json").read_text(encoding="utf-8")
+    )
+    source_index = json.loads(
+        (bundle / "source-index.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads(
+        (bundle / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert provenance["complete"] is True
+    assert provenance["entry_count"] == 2
+    assert all("source_id" in source for source in source_index["sources"])
+    assert manifest["provenance_required"] is True
+
+    result = verify_evidence_bundle(bundle)
+    assert result["provenance"]["complete"] is True
+    assert result["provenance"]["entries"] == 2
+
+
+def test_strict_bundle_rejects_unknown_provenance(tmp_path: Path):
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    _write_wav(audio_root / "metal.wav", 400)
+    _write_wav(audio_root / "impact.wav", 900)
+    board_path = tmp_path / "board.json"
+    board_path.write_text(json.dumps(_board()), encoding="utf-8")
+    ledger = write_provenance_ledger(audio_root, tmp_path / "provenance.json")
+
+    with pytest.raises(EvidenceBundleError, match="complete provenance"):
+        build_evidence_bundle(
+            board_path,
+            audio_root,
+            tmp_path / "bundle",
+            provenance_ledger_path=ledger,
+            require_provenance=True,
+        )
