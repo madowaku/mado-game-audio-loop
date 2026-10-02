@@ -23,6 +23,7 @@ const state = {
   decisionContextStale: false,
   deltaInspector: null,
   deltaInspectorStale: false,
+  variationBriefs: [],
 };
 
 const list = document.querySelector("#audio-list");
@@ -107,6 +108,17 @@ const deltaInspectorCount = document.querySelector("#delta-inspector-count");
 const deltaInspectorSummary = document.querySelector("#delta-inspector-summary");
 const deltaInspectorStale = document.querySelector("#delta-inspector-stale");
 const deltaInspectorList = document.querySelector("#delta-inspector-list");
+const variationReference = document.querySelector("#variation-reference");
+const variationHypothesis = document.querySelector("#variation-hypothesis");
+const variationListeningFor = document.querySelector("#variation-listening-for");
+const variationDimension = document.querySelector("#variation-dimension");
+const variationAction = document.querySelector("#variation-action");
+const variationAmount = document.querySelector("#variation-amount");
+const variationUnit = document.querySelector("#variation-unit");
+const variationNote = document.querySelector("#variation-note");
+const variationPreserve = document.querySelector("#variation-preserve");
+const saveVariationBriefButton = document.querySelector("#save-variation-brief");
+const variationBriefList = document.querySelector("#variation-brief-list");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -1503,6 +1515,244 @@ function deltaText(delta) {
   );
 }
 
+function variationInputElements() {
+  return [
+    variationReference,
+    variationHypothesis,
+    variationListeningFor,
+    variationDimension,
+    variationAction,
+    variationAmount,
+    variationUnit,
+    variationNote,
+    variationPreserve,
+    saveVariationBriefButton,
+  ];
+}
+
+function updateVariationBriefControls() {
+  const enabled = Boolean(
+    state.deltaInspector &&
+    !state.deltaInspectorStale
+  );
+  variationInputElements().forEach(function (element) {
+    element.disabled = !enabled;
+  });
+}
+
+function renderVariationReferenceOptions() {
+  const previous = variationReference.value;
+  variationReference.replaceChildren();
+
+  const general = document.createElement("option");
+  general.value = "";
+  general.textContent = "General current Recipe";
+  variationReference.appendChild(general);
+
+  const inspector = state.deltaInspector;
+  if (inspector) {
+    inspector.inspections.forEach(function (inspection) {
+      [
+        ["past_winner", inspection.winner_candidate_id],
+        ["past_loser", inspection.loser_candidate_id],
+      ].forEach(function (row) {
+        const option = document.createElement("option");
+        option.value =
+          inspection.entry_id + "|" + row[0];
+        option.textContent =
+          inspection.archive_id +
+          " · pair " +
+          String(inspection.pair_index + 1) +
+          " · " +
+          row[0].replace("_", " ") +
+          " · " +
+          row[1];
+        variationReference.appendChild(option);
+      });
+    });
+  }
+
+  if (
+    Array.from(variationReference.options).some(function (option) {
+      return option.value === previous;
+    })
+  ) {
+    variationReference.value = previous;
+  }
+}
+
+function renderVariationBriefs() {
+  variationBriefList.replaceChildren();
+  state.variationBriefs.slice().reverse().forEach(function (brief) {
+    const card = document.createElement("article");
+    card.className = "variation-brief-card";
+
+    const title = document.createElement("strong");
+    title.textContent = brief.hypothesis || "Variation Brief";
+
+    const meta = document.createElement("span");
+    meta.textContent =
+      brief.dimension +
+      " · " +
+      brief.action +
+      (brief.reference_role
+        ? " · " + brief.reference_role.replace("_", " ")
+        : " · general");
+
+    const listen = document.createElement("span");
+    listen.textContent =
+      "Listen for: " + brief.listening_for;
+
+    card.append(title, meta, listen);
+    variationBriefList.appendChild(card);
+  });
+}
+
+async function refreshVariationBriefs() {
+  try {
+    const response = await fetch(
+      "/api/variation-briefs",
+      { cache: "no-store" }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not load Variation Briefs"
+      );
+    }
+    state.variationBriefs = result.filter(function (item) {
+      return item.ok !== false;
+    });
+    renderVariationBriefs();
+  } catch (error) {
+    status.textContent =
+      "Variation Brief list failed: " + error.message;
+  }
+}
+
+function variationReferencePayload() {
+  const value = variationReference.value;
+  if (!value) return null;
+  const parts = value.split("|");
+  return {
+    entry_id: parts[0],
+    role: parts[1],
+  };
+}
+
+function variationAmountPayload() {
+  const raw = variationAmount.value.trim();
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+async function saveVariationBrief() {
+  if (
+    !state.deltaInspector ||
+    state.deltaInspectorStale
+  ) {
+    return;
+  }
+
+  const hypothesis = variationHypothesis.value.trim();
+  const listeningFor = variationListeningFor.value.trim();
+  if (!hypothesis || !listeningFor) {
+    status.textContent =
+      "Variation Brief needs a hypothesis and listening target";
+    return;
+  }
+
+  saveVariationBriefButton.disabled = true;
+  saveVariationBriefButton.textContent = "Saving…";
+
+  try {
+    const response = await fetch(
+      "/api/variation-briefs",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inspector: state.deltaInspector,
+          human_input: {
+            hypothesis: hypothesis,
+            listening_for: listeningFor,
+            planned_change: {
+              dimension: variationDimension.value,
+              action: variationAction.value,
+              amount: variationAmountPayload(),
+              unit: variationUnit.value || null,
+              note: variationNote.value.trim() || null,
+            },
+            preserve: variationPreserve.value
+              .split(",")
+              .map(function (value) {
+                return value.trim();
+              })
+              .filter(Boolean),
+            reference: variationReferencePayload(),
+          },
+        }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not save Variation Brief"
+      );
+    }
+    if (
+      !result.brief ||
+      !result.brief.human_input ||
+      result.brief.human_input.authorship !== "human_explicit" ||
+      !result.brief.authority ||
+      result.brief.authority.recipe_mutation !== "none" ||
+      result.brief.authority.candidate_selection !== "none" ||
+      result.brief.authority.candidate_generation !== "none"
+    ) {
+      throw new Error(
+        "Variation Brief authority boundary is invalid"
+      );
+    }
+
+    variationHypothesis.value = "";
+    variationListeningFor.value = "";
+    variationNote.value = "";
+    variationAmount.value = "";
+    variationPreserve.value = "";
+    await refreshVariationBriefs();
+    status.textContent =
+      "Variation Brief saved · " +
+      result.brief.brief_id +
+      (result.saved.reused ? " · reused" : "");
+  } catch (error) {
+    status.textContent =
+      "Variation Brief failed: " + error.message;
+  } finally {
+    saveVariationBriefButton.textContent =
+      "Save Variation Brief";
+    updateVariationBriefControls();
+  }
+}
+
+function syncVariationUnit() {
+  const dimension = variationDimension.value;
+  if (dimension === "gain") {
+    variationUnit.value = "ratio";
+  } else if (
+    dimension === "offset" ||
+    dimension === "fade"
+  ) {
+    variationUnit.value = "ms";
+  } else if (dimension === "layers") {
+    variationUnit.value = "count";
+  } else {
+    variationUnit.value = "";
+  }
+}
+
 function updateDeltaInspectorControls() {
   const hasContext = Boolean(state.decisionContext);
   const contextFresh = hasContext && !state.decisionContextStale;
@@ -1578,6 +1828,8 @@ function renderDeltaInspector() {
     deltaInspectorList.appendChild(card);
   });
 
+  renderVariationReferenceOptions();
+  updateVariationBriefControls();
   updateDeltaInspectorControls();
 }
 
@@ -1588,6 +1840,7 @@ function markDeltaInspectorStale() {
   }
   state.deltaInspectorStale = true;
   renderDeltaInspector();
+  updateVariationBriefControls();
 }
 
 async function inspectCurrentDeltas() {
@@ -2510,6 +2763,8 @@ loadDecisionContextButton.addEventListener("click", loadDecisionContext);
 downloadDecisionContextButton.addEventListener("click", downloadDecisionContext);
 inspectCurrentDeltasButton.addEventListener("click", inspectCurrentDeltas);
 downloadDeltaInspectorButton.addEventListener("click", downloadDeltaInspector);
+saveVariationBriefButton.addEventListener("click", saveVariationBrief);
+variationDimension.addEventListener("change", syncVariationUnit);
 intent.addEventListener("input", markDecisionContextStale);
 preferenceReplayPrev.addEventListener("click", function () {
   if (!state.preferenceReplay) return;
@@ -2741,6 +2996,7 @@ async function boot() {
   await refreshCatalog({ quiet: false });
   await refreshPreferenceArchive({ quiet: true });
   await refreshDecisionMemory({ quiet: true });
+  await refreshVariationBriefs();
   updateAuditionControls();
   renderRecipe();
   renderCandidates();
