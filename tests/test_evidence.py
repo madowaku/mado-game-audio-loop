@@ -242,3 +242,54 @@ def test_strict_bundle_rejects_unknown_provenance(tmp_path: Path):
             provenance_ledger_path=ledger,
             require_provenance=True,
         )
+
+
+def test_strict_provenance_preflight_leaves_no_partial_bundle(tmp_path: Path):
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    _write_wav(audio_root / "metal.wav", 400)
+    _write_wav(audio_root / "impact.wav", 900)
+    board_path = tmp_path / "board.json"
+    board_path.write_text(json.dumps(_board()), encoding="utf-8")
+    ledger = write_provenance_ledger(audio_root, tmp_path / "provenance.json")
+    output = tmp_path / "bundle"
+
+    with pytest.raises(EvidenceBundleError, match="complete provenance"):
+        build_evidence_bundle(
+            board_path,
+            audio_root,
+            output,
+            provenance_ledger_path=ledger,
+            require_provenance=True,
+        )
+
+    assert not output.exists()
+
+
+def test_bundle_rejects_ledger_missing_referenced_fingerprint(tmp_path: Path):
+    audio_root = tmp_path / "audio"
+    audio_root.mkdir()
+    _write_wav(audio_root / "metal.wav", 400)
+    _write_wav(audio_root / "impact.wav", 900)
+    board_path = tmp_path / "board.json"
+    board_path.write_text(json.dumps(_board()), encoding="utf-8")
+    ledger = write_provenance_ledger(audio_root, tmp_path / "provenance.json")
+
+    payload = json.loads(ledger.read_text(encoding="utf-8"))
+    payload["entries"] = [
+        entry for entry in payload["entries"]
+        if entry["path_hint"] != "impact.wav"
+    ]
+    payload["entry_count"] = len(payload["entries"])
+    ledger.write_text(
+        json.dumps(payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(EvidenceBundleError, match="does not cover"):
+        build_evidence_bundle(
+            board_path,
+            audio_root,
+            tmp_path / "bundle",
+            provenance_ledger_path=ledger,
+        )
