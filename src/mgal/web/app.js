@@ -201,12 +201,18 @@ function updateAuditionControls() {
     return candidate.id === state.activeCandidateId;
   });
 
-  blindModeButton.disabled = !hasCandidates;
-  sequenceCandidatesButton.disabled = !hasCandidates;
+  const preferenceHidden = Boolean(
+    state.preferenceSession && !state.preferenceSession.revealed
+  );
+
+  blindModeButton.disabled = !hasCandidates || preferenceHidden;
+  sequenceCandidatesButton.disabled = !hasCandidates || preferenceHidden;
   preferenceSessionButton.disabled = state.candidates.length < 2;
-  previousCandidateButton.disabled = !hasCandidates || activeIndex <= 0;
+  previousCandidateButton.disabled =
+    !hasCandidates || preferenceHidden || activeIndex <= 0;
   nextCandidateButton.disabled =
     !hasCandidates ||
+    preferenceHidden ||
     activeIndex < 0 ||
     activeIndex >= state.candidates.length - 1;
 
@@ -220,6 +226,9 @@ function updateAuditionControls() {
     "active",
     Boolean(state.preferenceSession)
   );
+  preferenceSessionButton.textContent = state.preferenceSession
+    ? "◇ Close pref"
+    : "◇ Preference";
 
   document.body.classList.toggle("blind-mode", state.blindMode);
   document.body.classList.toggle(
@@ -934,6 +943,7 @@ function moveCandidate(step, shouldPreview) {
 
 function toggleBlindMode() {
   if (state.candidates.length === 0) return;
+  if (state.preferenceSession && !state.preferenceSession.revealed) return;
   state.blindMode = !state.blindMode;
   updateAuditionControls();
   status.textContent = state.blindMode
@@ -1042,6 +1052,7 @@ function closePreferenceSession() {
   preferencePanel.hidden = true;
   state.blindMode = false;
   updateAuditionControls();
+  renderRecipe();
   renderCandidates();
   status.textContent = "Preference session closed";
 }
@@ -1122,6 +1133,7 @@ function revealPreferenceSession() {
   session.revealed = true;
   state.blindMode = false;
   updateAuditionControls();
+  renderRecipe();
   renderCandidates();
   renderPreferenceSession();
   status.textContent = "Preference identities revealed";
@@ -1463,7 +1475,11 @@ function renderCandidates() {
   candidatesForDisplay().forEach(function (candidate) {
     candidateBoard.appendChild(renderCandidateCard(candidate));
   });
-  downloadBoardButton.disabled = false;
+  const preferenceHidden = Boolean(
+    state.preferenceSession && !state.preferenceSession.revealed
+  );
+  downloadBoardButton.disabled = preferenceHidden;
+  downloadRecipe.disabled = preferenceHidden || state.selected.length === 0;
   clearBoardButton.disabled = false;
   updateAuditionControls();
   renderIntakeSessions();
