@@ -7,7 +7,10 @@ from pathlib import Path
 from .audio import scan_audio
 from .candidate import load_candidate_board
 from .evidence import build_evidence_bundle, verify_evidence_bundle
-from .intake import build_provider_intake
+from .intake import (
+    build_provider_intake,
+    write_intake_candidate_seed,
+)
 from .normalizer import normalize_provider_result_file
 from .provenance import (
     merge_provenance_ledgers,
@@ -191,6 +194,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     source_provide.add_argument("--output", "-o")
     source_provide.add_argument("--provenance-output")
+
+    intake_seed_board = sub.add_parser(
+        "intake-seed-board",
+        help="Compile one intake session into an A/B/C Candidate Board",
+    )
+    intake_seed_board.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    intake_seed_board.add_argument(
+        "--intake-id",
+        required=True,
+    )
+    intake_seed_board.add_argument(
+        "--output",
+        "-o",
+        required=True,
+    )
 
     provider_intake = sub.add_parser(
         "provider-intake",
@@ -399,6 +420,15 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "intake-seed-board":
+        output = write_intake_candidate_seed(
+            args.audio_root,
+            args.intake_id,
+            args.output,
+        )
+        print(output)
         return 0
 
     if args.command == "provider-intake":
