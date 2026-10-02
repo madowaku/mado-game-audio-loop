@@ -85,3 +85,5 @@ def test_intake_seed_ui_contract():
     assert "state.candidates.length > 0" in js
     assert ".intake-session-card" in css
     assert ".intake-seed" in css
+    assert "candidate-sources" in js
+    assert ".candidate-sources" in css
