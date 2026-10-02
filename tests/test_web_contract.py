@@ -239,8 +239,11 @@ def test_preference_keyboard_intercepts_pairwise_vote_before_navigation():
     keyboard = js[start:end]
 
     pref = keyboard.index("if (preference && !preference.revealed)")
-    normal_right = keyboard.index('if (event.key === "ArrowRight")', pref + 1)
     vote_right = keyboard.index("votePreferenceSide(1)", pref)
+    normal_right = keyboard.index(
+        'if (event.key === "ArrowRight")',
+        vote_right + 1,
+    )
 
     assert vote_right < normal_right
     assert 'if (event.key === "1")' in keyboard
