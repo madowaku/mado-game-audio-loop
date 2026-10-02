@@ -7,6 +7,11 @@ from pathlib import Path
 from .audio import scan_audio
 from .candidate import load_candidate_board
 from .evidence import build_evidence_bundle, verify_evidence_bundle
+from .provenance import (
+    update_provenance_entry,
+    validate_provenance_ledger,
+    write_provenance_ledger,
+)
 from .recipe import load_recipe
 from .recovery import recover_sources, write_relink_map
 from .render import render_recipe
@@ -34,6 +39,15 @@ def build_parser() -> argparse.ArgumentParser:
     bundle.add_argument("board", help="Candidate Board JSON file")
     bundle.add_argument("--audio-root", required=True, help="Folder containing source WAV files")
     bundle.add_argument("--output", "-o", required=True, help="Evidence Bundle output directory")
+    bundle.add_argument(
+        "--provenance-ledger",
+        help="Optional provenance/license ledger JSON",
+    )
+    bundle.add_argument(
+        "--require-provenance",
+        action="store_true",
+        help="Reject bundling unless every referenced source has complete provenance",
+    )
 
     verify_bundle = sub.add_parser(
         "verify-bundle",
@@ -59,6 +73,44 @@ def build_parser() -> argparse.ArgumentParser:
         "--relink-map",
         help="Optional relink-map JSON for moved or renamed source WAV files",
     )
+
+    provenance_scan = sub.add_parser(
+        "provenance-scan",
+        help="Create a content-addressed provenance ledger from a WAV library",
+    )
+    provenance_scan.add_argument("audio_root")
+    provenance_scan.add_argument("--output", "-o", required=True)
+
+    provenance_set = sub.add_parser(
+        "provenance-set",
+        help="Update provenance/license metadata for one ledger source",
+    )
+    provenance_set.add_argument("ledger")
+    provenance_set.add_argument("source")
+    provenance_set.add_argument("--source-type")
+    provenance_set.add_argument("--creator")
+    provenance_set.add_argument("--title")
+    provenance_set.add_argument("--origin-url")
+    provenance_set.add_argument("--license-status")
+    provenance_set.add_argument("--license-expression")
+    provenance_set.add_argument("--license-url")
+    provenance_set.add_argument("--attribution")
+    provenance_set.add_argument("--license-notes")
+    provenance_set.add_argument("--provider")
+    provenance_set.add_argument("--model")
+    provenance_set.add_argument("--prompt")
+    provenance_set.add_argument("--seed")
+    provenance_set.add_argument("--recorded-by")
+    provenance_set.add_argument("--recorded-at")
+    provenance_set.add_argument("--device")
+    provenance_set.add_argument("--notes")
+
+    validate_ledger = sub.add_parser(
+        "validate-ledger",
+        help="Validate provenance ledger structure and optional source fingerprints",
+    )
+    validate_ledger.add_argument("ledger")
+    validate_ledger.add_argument("--audio-root")
 
     recover = sub.add_parser(
         "recover-sources",
@@ -124,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
             args.board,
             args.audio_root,
             args.output,
+            provenance_ledger_path=args.provenance_ledger,
+            require_provenance=args.require_provenance,
         )
         print(output)
         return 0
@@ -140,6 +194,48 @@ def main(argv: list[str] | None = None) -> int:
                     args.audio_root,
                     output_path=args.output,
                     relink_map_path=args.relink_map,
+                ),
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "provenance-scan":
+        output = write_provenance_ledger(args.audio_root, args.output)
+        print(output)
+        return 0
+
+    if args.command == "provenance-set":
+        entry = update_provenance_entry(
+            args.ledger,
+            args.source,
+            source_type=args.source_type,
+            creator=args.creator,
+            title=args.title,
+            origin_url=args.origin_url,
+            license_status=args.license_status,
+            license_expression=args.license_expression,
+            license_url=args.license_url,
+            attribution=args.attribution,
+            license_notes=args.license_notes,
+            provider=args.provider,
+            model=args.model,
+            prompt=args.prompt,
+            seed=args.seed,
+            recorded_by=args.recorded_by,
+            recorded_at=args.recorded_at,
+            device=args.device,
+            notes=args.notes,
+        )
+        print(json.dumps(entry, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "validate-ledger":
+        print(
+            json.dumps(
+                validate_provenance_ledger(
+                    args.ledger,
+                    audio_root=args.audio_root,
                 ),
                 indent=2,
             )
