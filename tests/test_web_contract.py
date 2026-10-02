@@ -33,6 +33,15 @@ def test_candidate_board_static_contract():
         "preference-apply",
         "preference-evidence",
         "preference-close",
+        "preference-archive",
+        "refresh-preference-archive",
+        "preference-archive-list",
+        "preference-replay-panel",
+        "preference-replay-prev",
+        "preference-replay-next",
+        "preference-replay-left-play",
+        "preference-replay-right-play",
+        "close-preference-replay",
     ):
         assert f'id="{element_id}"' in html
 
@@ -87,8 +96,15 @@ def test_candidate_board_static_contract():
         "candidatesForDisplay",
         "preferenceEvidenceRequest",
         "downloadPreferenceEvidence",
-        "/api/preference-evidence",
+        "/api/preference-archive",
+        "/api/preferences",
         "appliedCandidateId",
+        "refreshPreferenceArchive",
+        "renderPreferenceArchive",
+        "openPreferenceReplay",
+        "renderPreferenceReplay",
+        "playPreferenceReplaySide",
+        "replayRecipeLayers",
     ):
         assert token in js
 
@@ -261,7 +277,7 @@ def test_preference_evidence_export_contract():
     html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
     js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
 
-    assert "Download evidence" in html
+    assert "Archive + download" in html
     assert 'method: "POST"' in js
     assert '"Content-Type": "application/json"' in js
     assert "candidate_board: boardPayload()" in js
@@ -270,3 +286,30 @@ def test_preference_evidence_export_contract():
     assert "votes: session.votes" in js
     assert "appliedCandidateId: session.appliedCandidateId" in js
     assert "preferenceEvidence.disabled = !session.revealed" in js
+    assert 'fetch("/api/preference-archive"' in js
+    assert "await refreshPreferenceArchive({ quiet: true })" in js
+
+
+def test_preference_archive_replay_ui_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "PREFERENCE ARCHIVE" in html
+    assert "Replay past blind sessions" in html
+    assert "VERIFIED REPLAY" in html
+    assert "Prev pair" in html
+    assert "Next pair" in html
+
+    assert 'fetch("/api/preferences"' in js
+    assert '"/replay"' in js
+    assert "state.preferenceReplayPairIndex" in js
+    assert "pair.left_recipe" in js
+    assert "pair.right_recipe" in js
+    assert "recipe.layers.map(makeLayerFromRecipeLayer)" in js
+    assert "Recorded preference:" in js
+
+    assert ".preference-archive" in css
+    assert ".preference-archive-card" in css
+    assert ".preference-replay-panel" in css
+    assert ".preference-replay-chip" in css
