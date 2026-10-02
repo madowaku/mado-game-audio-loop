@@ -1756,6 +1756,197 @@ Closing a session without Apply preserves the durable Board.
 - closing without Apply leaves durable Candidate decisions unchanged
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M1.7 Preference Session Evidence / Replay
+
+Goal:
+
+**Persist a completed randomized blind Preference Session as a separately validated evidence artifact and reconstruct the exact comparison schedule later against fingerprint-verified audio.**
+
+Preference Evidence schema:
+
+```text
+preference_session_version = 0.1
+candidate_board_sha256
+candidate_board
+mapping[]
+pairs[]
+votes[]
+scores[]
+winner_candidate_id
+tie
+applied_candidate_id
+source_index
+```
+
+#### Server-side compilation
+
+Browser export uses:
+
+```text
+POST /api/preference-evidence
+```
+
+Input contains:
+
+- current Candidate Board payload
+- randomized mapping
+- pair schedule
+- votes
+- revealed flag
+- applied Candidate ID or null
+
+The Python compiler requires Reveal before compilation.
+
+It validates Candidate Board 0.1 first.
+
+#### Mapping contract
+
+Evidence accepts two or three Candidates.
+
+Aliases must be exactly:
+
+```text
+2 candidates → X / Y
+3 candidates → X / Y / Z
+```
+
+Aliases and Candidate IDs must both be unique and must reference Candidates in the embedded Board.
+
+#### Pair contract
+
+Pair count must equal:
+
+```text
+n * (n - 1) / 2
+```
+
+Every unordered Candidate pair must appear exactly once.
+
+Left/right order is preserved exactly as experienced.
+
+Duplicate or missing pairs are invalid.
+
+#### Vote contract
+
+Evidence requires exactly one vote per pair.
+
+Each vote must identify a winner that belongs to the corresponding pair.
+
+Loser identity is recomputed and validated.
+
+#### Result contract
+
+Scores are recomputed from votes.
+
+A winner exists only when exactly one Candidate has the maximum win count.
+
+`winner_candidate_id` and `tie` must match recomputation.
+
+If `applied_candidate_id` is non-null:
+
+- it must equal the unique winner
+- the embedded Candidate Board must select that same Candidate
+
+#### Candidate Board binding
+
+The embedded Board is serialized canonically with sorted JSON keys and compact separators.
+
+SHA-256 becomes:
+
+```text
+candidate_board_sha256
+```
+
+Validation recomputes and checks the fingerprint.
+
+#### Source index
+
+Every unique WAV source referenced by compared Candidate Recipes is resolved safely beneath the audio root.
+
+Evidence records:
+
+```text
+relative_path
+sha256
+bytes
+```
+
+Absolute paths and traversal outside the audio root are rejected.
+
+#### Browser export
+
+After Reveal, `Download evidence` becomes enabled.
+
+Before Reveal the action stays disabled.
+
+Browser sends the transient session to the Python compiler and downloads only the compiler result.
+
+#### CLI validation
+
+```bash
+mgal validate-preference preference-evidence.json
+```
+
+#### Replay
+
+```bash
+mgal replay-preference preference-evidence.json \
+  --audio-root ./audio \
+  --output replay-plan.json
+```
+
+Replay:
+
+1. validates Preference Evidence schema
+2. verifies every source byte size
+3. verifies every source SHA-256
+4. reconstructs Candidate sources from the embedded Board
+5. returns the recorded X/Y/Z mapping
+6. returns pairs in original order and left/right placement
+7. attaches the recorded winner to each pair
+8. returns final winner/tie and Apply state
+
+No new randomization occurs during replay.
+
+#### Main Evidence Bundle bridge
+
+`mgal bundle` accepts:
+
+```text
+--preference-evidence <path>
+```
+
+When supplied:
+
+- Preference Evidence is validated before bundling
+- applied winner, if present, must match current Board selection
+- artifact is copied as `preference-session.json`
+- normal Bundle manifest fingerprints it
+- `verify-bundle` revalidates Preference logic
+
+#### M1.7 acceptance
+
+- completed revealed session can compile into Preference Evidence 0.1
+- incomplete/unrevealed session is rejected
+- Board snapshot receives deterministic SHA-256 binding
+- mapping aliases and Candidate IDs are validated
+- every unique pair must occur exactly once
+- every pair requires exactly one consistent vote
+- score totals are recomputed
+- winner/tie are recomputed
+- Apply winner must agree with embedded Board selection
+- compared WAV paths are safely resolved under audio root
+- compared WAV SHA-256 and byte counts are recorded
+- Browser downloads server-compiled Evidence after Reveal
+- CLI validates standalone Preference Evidence
+- Replay detects modified WAV bytes
+- Replay reconstructs exact mapping/pair/left-right/vote order
+- replay plan can be written as JSON
+- Preference Evidence can be included in normal Evidence Bundle
+- Bundle verify revalidates Preference Evidence semantics
+- Preference state still does not enter Candidate Board serialization
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
