@@ -2,132 +2,266 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → blind preference → archive → recover → promote → decision memory → evidence → release**
+**provide → intake → blind preference → archive → decision memory → retrieve context → create again**
 
-## Current milestone: M2.0 Preference Archive Promotion / Decision Memory
+## Current milestone: M2.1 Decision Memory Retrieval / Context Pack
 
-M2.0 turns selected Preference Archives into reusable decision evidence.
+M2.1 makes explicitly promoted Decision Memory useful during a new sound-design task without turning memory into an automatic recommender.
 
-The boundary is deliberate:
+The flow is:
 
 ```text
-Preference Archive
-= what happened in one blind listening session
-
+Current intent
+     ↓ explicit retrieval
 Decision Memory
-= only the sessions the creator explicitly chose to keep as reusable observations
+     ↓ deterministic intent match
+Context Pack
+     ↓ reference only
+creator listens / edits / decides
 ```
 
-Decision Memory does **not** choose the next Candidate.
+The Context Pack can inform the creator. It cannot choose, rank, copy, select, or apply a Candidate.
 
-It records observed pairwise choices so future tools can retrieve context without converting past taste into an automatic rule.
+## Context Pack 0.1
 
-## Explicit promotion
+Top-level fields:
 
-Every Preference Archive remains ordinary history until the creator explicitly promotes it:
+```text
+decision_context_pack_version = 0.1
+context_pack_id
+retrieval_strategy
+decision_memory_sha256
+query
+memory_snapshot
+matched_entry_count
+returned_entry_count
+truncated
+observations[]
+usage
+```
+
+Authority boundary:
+
+```json
+{
+  "usage": {
+    "role": "reference_only",
+    "selection_effect": "none"
+  }
+}
+```
+
+Both Python validation and the Browser UI enforce this boundary.
+
+## Deterministic retrieval strategy
+
+Current strategy:
+
+```text
+intent-token-overlap-v1
+```
+
+The query and each promoted observation's source intent are normalized with Unicode NFKC and case folding.
+
+Retrieval terms include:
+
+- Unicode word tokens with length >= 2
+- a small English stop-word exclusion
+- CJK contiguous runs
+- CJK 2-grams for Japanese/Chinese/Korean intents
+
+Examples:
+
+```text
+query:
+metallic sword impact
+
+memory:
+crisp metallic sword impact
+
+matched:
+metallic
+sword
+impact
+```
+
+Japanese intent fragments also remain searchable through CJK 2-gram overlap.
+
+## What match values mean
+
+Context observations record:
+
+```text
+exact_intent
+matched_terms[]
+match_count
+query_term_count
+source_term_count
+```
+
+These are retrieval metadata only.
+
+They are **not**:
+
+```text
+Candidate quality
+preference strength
+confidence
+taste score
+recommendation score
+```
+
+The retrieval order is deterministic:
+
+1. exact intent first
+2. more matched terms first
+3. source intent
+4. archive ID
+5. pair index
+6. entry ID
+
+No randomness is used.
+
+## Zero-match behavior
+
+MGAL does not fill an empty result with unrelated memories.
+
+```text
+query: underwater bubble
+
+Decision Memory:
+- crisp metallic sword impact
+- soft wooden UI tap
+
+result:
+0 observations
+```
+
+This prevents old decisions from leaking into unrelated work merely because some context is available.
+
+## CLI
+
+Retrieve context:
 
 ```bash
-mgal decision-promote heavy-slash-review \
+mgal decision-context "heavy metallic slash" \
+  --audio-root ./audio \
+  --limit 6
+```
+
+Write a portable JSON Context Pack:
+
+```bash
+mgal decision-context "heavy metallic slash" \
+  --audio-root ./audio \
+  --limit 6 \
+  --output ./context/heavy-metallic-slash.json
+```
+
+Verify that a saved pack still matches current Decision Memory:
+
+```bash
+mgal decision-context-verify \
+  ./context/heavy-metallic-slash.json \
   --audio-root ./audio
 ```
 
-Browser archives expose:
+## Memory snapshot binding
+
+Each Context Pack records:
 
 ```text
-[ Promote memory ]
+decision_memory_sha256
 ```
 
-After promotion:
+The hash covers the complete canonical Decision Memory used during retrieval.
+
+Therefore:
 
 ```text
-[ In memory ]
+Context Pack generated
+      ↓
+another archive gets promoted
+      ↓
+Decision Memory changes
+      ↓
+old Context Pack = stale
 ```
 
-Promotion is independent from source recovery.
+`decision-context-verify` rejects a stale pack instead of pretending it still represents the current memory set.
 
-A structurally valid Preference Archive may be promoted even if its WAV files have moved and the archive is currently marked `recoverable`.
-
-That is intentional:
+The Context Pack itself also has a deterministic:
 
 ```text
-source availability
-!=
-historical decision validity
+context:<sha256-prefix>
 ```
 
-## Workspace storage
+identity derived from its payload.
 
-Decision Memory is stored at:
+## Browser workflow
+
+The Intent field now has:
 
 ```text
-audio/
-└── .mgal/
-    ├── decision-memory.json
-    ├── preferences/
-    └── preference-relinks/
+[ Load memory context ]
+[ Download context pack ]
 ```
 
-Schema:
+Loading is explicit. MGAL does not query Decision Memory on every keystroke.
+
+The Browser calls:
 
 ```text
-decision_memory_version = 0.1
-promotion_count
-entry_count
-promotions[]
-entries[]
+GET /api/decision-context?intent=<current-intent>&limit=6
 ```
 
-## Promotion records
-
-One promotion records the archived session identity:
+A result appears beside the current Recipe work:
 
 ```text
-archive_id
-archive_evidence_sha256
-candidate_board_sha256
-intent
-pair_count
-winner_candidate_id
-tie
-applied_candidate_id
-entry_ids[]
+MEMORY CONTEXT · REFERENCE ONLY
+
+3 of 3 matching observations
+
+memory-b preferred over memory-a
+metal-archive · crisp metallic sword impact
+matched metallic, sword, impact
+observed Δ gain +0.3 · earliest offset +25ms
 ```
 
-The canonical Preference Evidence SHA-256 is the promotion identity.
+There are no Candidate-action buttons in this panel.
 
-Promoting identical Evidence twice is idempotent.
+## Intent-change staleness
 
-Even if the same Evidence exists under another archive name, it is not counted twice.
-
-## Pairwise Decision Memory entries
-
-M2.0 intentionally does not collapse a session into a single taste score.
-
-A three-pair Preference Session becomes three observations.
-
-Example:
+If the creator edits Intent after loading Context:
 
 ```text
-pair 1
-Candidate B preferred over Candidate A
-
-pair 2
-Candidate C preferred over Candidate A
-
-pair 3
-Candidate B preferred over Candidate C
+Intent changed.
+Reload context before using this pack.
 ```
 
-Each entry records:
+The Browser marks the displayed pack stale and disables Context Pack download.
+
+It does not silently auto-retrieve a different set.
+
+This preserves an explicit relationship between:
+
+```text
+the intent the creator asked about
+and
+the observations shown beside it
+```
+
+## Observation payload
+
+Each returned observation carries the promoted Decision Memory facts required for inspection:
 
 ```text
 entry_id
 archive_id
 archive_evidence_sha256
-candidate_board_sha256
-intent
+source_intent
+match metadata
 pair_index
-winner_alias
 winner_candidate_id
 loser_candidate_id
 winner_recipe
@@ -135,219 +269,67 @@ loser_recipe
 observed_differences
 ```
 
-## Recipe summaries
+Recipe summaries still use SHA-256 source identities rather than filesystem paths.
 
-Winner and loser Recipes are converted into relocatable summaries.
+## Automatic-action prohibition
 
-Each summary records:
-
-```text
-recipe_id
-recipe_sha256
-layer_count
-total_gain
-earliest_offset_ms
-latest_offset_ms
-normalize
-fade_out_ms
-source_ids[]
-```
-
-Source identity is content-addressed:
-
-```text
-sha256:<source-hash>
-```
-
-Filesystem paths are not used as Decision Memory identity.
-
-## Observed differences
-
-M2.0 derives deterministic pair differences:
-
-```text
-layer_count_delta
-total_gain_delta
-earliest_offset_ms_delta
-latest_offset_ms_delta
-fade_out_ms_delta
-normalize_changed
-shared_source_count
-winner_only_source_count
-loser_only_source_count
-```
-
-For example:
-
-```text
-Candidate B preferred over Candidate A
-
-observed:
-Δ layers           0
-Δ total gain      +0.30
-Δ earliest offset +25 ms
-Δ fade              0 ms
-```
-
-These are observations about one comparison.
-
-They are **not** converted into claims such as:
-
-```text
-"always use more gain"
-"Candidate B style is better"
-"auto-select this Recipe next time"
-```
-
-## Decision Memory UI
-
-The Browser now includes:
-
-```text
-DECISION MEMORY
-
-2 promoted sessions · 6 pairwise observations
-
-Candidate B preferred over Candidate A
-heavy-slash-review · pair 1 · crisp sword impact
-observed Δ layers 0 · gain +0.3 · earliest offset +25ms
-```
-
-The UI currently shows the most recent observations.
-
-It is a review surface, not an automatic recommender.
-
-## API
-
-```text
-GET  /api/decision-memory
-POST /api/preferences/<archive-id>/promote
-```
-
-The Preference Archive list is also enriched with:
-
-```text
-promotable
-promoted
-```
-
-A recoverable archive can still be promotable.
-
-A structurally corrupted archive cannot.
-
-## CLI
-
-Promote one archive:
-
-```bash
-mgal decision-promote heavy-slash-review \
-  --audio-root ./audio
-```
-
-Inspect the full memory:
-
-```bash
-mgal decision-memory \
-  --audio-root ./audio
-```
-
-Verify derived memory against the source Preference Archives:
-
-```bash
-mgal decision-memory-verify \
-  --audio-root ./audio
-```
-
-Verification recompiles every promoted archive into its expected pairwise observations and requires exact entry equality.
-
-This catches manual changes to:
-
-- winner/loser identity
-- Recipe summary
-- Recipe fingerprint
-- source fingerprints
-- observed deltas
-- promotion entry references
-
-## Multi-session accumulation
-
-Decision Memory accumulates multiple explicit promotions.
-
-```text
-Archive 001
-  3 pair observations
-       +
-Archive 002
-  3 pair observations
-       =
-Decision Memory
-  2 promoted sessions
-  6 observations
-```
-
-The summary also groups promotion counts by intent.
-
-This is retrieval context, not a statistical quality ranking.
-
-## Human-control boundary
-
-M2.0 intentionally does not create:
+Context Pack validation rejects fields named:
 
 ```text
 recommended_candidate
 auto_select
 preference_score
-automatic Candidate ranking
-automatic Apply winner
+candidate_ranking
 ```
 
-The flow remains:
+M2.1 also does not introduce:
 
 ```text
-past blind session
-      ↓
-human chooses Promote
-      ↓
-Decision Memory observation
-      ↓
-future creator may inspect it
-      ↓
-new Candidate decision still belongs to the creator
+copy winner to Candidate
+apply past winner
+auto fork
+auto mix
+auto source selection
 ```
 
-## Relationship to Preference Archive
+The Browser independently checks:
 
 ```text
-Preference Archive
-immutable session evidence
-
-Preference Relink Map
-current filesystem address book
-
-Decision Memory
-mutable collection of explicitly promoted observations
+usage.role == reference_only
+usage.selection_effect == none
 ```
 
-Source recovery and Decision Memory are orthogonal.
+before displaying a server result.
 
-Moving files does not erase promoted decision evidence.
+## Relationship to M2.0
 
-Promoting a session does not alter the archive, Candidate Board, Recipe, or source Relink Map.
+```text
+M2.0 Decision Memory
+= the observations the creator explicitly chose to remember
+
+M2.1 Context Pack
+= a small deterministic subset relevant to the current intent
+```
+
+Decision Memory is durable workspace state.
+
+Context Pack is a query result bound to one Memory snapshot and one intent.
 
 ## Current constraints
 
-- Decision Memory is a local JSON artifact, not a database
-- promotion is additive; demotion/removal UI is not implemented yet
-- UI shows recent observations rather than full search/filter tooling
-- observed Recipe features are intentionally small and deterministic
-- no embedding/vector retrieval yet
-- no inferred preference model
-- no automatic Candidate recommendation
-- no automatic Candidate selection
-- Decision Memory is not cryptographically signed
+- retrieval is lexical, not semantic embedding search
+- there is no stemming or synonym expansion
+- CJK support is deterministic 2-gram matching, not language-specific morphology
+- retrieval uses Decision Memory intent text only
+- Context Pack does not retrieve raw WAV files
+- no automatic weighting from repeated wins
+- no time decay or recency bonus
+- no learned taste model
+- Browser limit is currently fixed at 6
+- stale Context Packs must be regenerated after Decision Memory changes
 
 ## Design principle
 
-> Preserve what the creator chose to remember without turning memory into authority.
+> Let memory answer “what happened before?” without answering “what should I choose now?”
 
-M2.0 gives MGAL durable decision context while keeping new creative decisions explicitly human.
+M2.1 gives the creator relevant past evidence at the moment of creation while leaving the new decision open.
