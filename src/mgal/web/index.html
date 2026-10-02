@@ -54,6 +54,25 @@
         <input id="intent" value="game sound effect" aria-label="Recipe intent">
       </label>
 
+      <div class="decision-context-controls">
+        <button id="load-decision-context" class="secondary compact" type="button">Load memory context</button>
+        <button id="download-decision-context" class="secondary compact" type="button" disabled>Download context pack</button>
+      </div>
+      <section id="decision-context-panel" class="decision-context-panel" hidden>
+        <div class="decision-context-head">
+          <div>
+            <p class="eyebrow">MEMORY CONTEXT · REFERENCE ONLY</p>
+            <h3>Related past listening observations</h3>
+          </div>
+          <span id="decision-context-count" class="count">0</span>
+        </div>
+        <p id="decision-context-summary" class="preference-message"></p>
+        <p id="decision-context-stale" class="decision-context-stale" hidden>Intent changed. Reload context before using this pack.</p>
+        <p id="decision-context-empty" class="hint" hidden>No promoted Decision Memory observation matches this intent.</p>
+        <div id="decision-context-list" class="decision-context-list"></div>
+        <p class="hint">Context is reference-only. It does not rank, copy, select, or apply any Candidate.</p>
+      </section>
+
       <div class="mix-transport">
         <button id="preview-mix" class="primary" type="button" disabled>▶ Preview mix</button>
         <button id="stop-mix" class="secondary" type="button" disabled>■ Stop</button>
