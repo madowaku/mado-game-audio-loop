@@ -791,7 +791,147 @@ M0.9 does not make legal determinations. It packages the provenance/license decl
 - verify-release detects semantic drift even after a payload hash is recomputed
 - Python tests and browser JavaScript checks remain green
 
-## Later provider architecture
+### MGAL-M1.0 Source Provider Contract
+
+Goal:
+
+**Make audio acquisition replaceable while keeping MGAL's audition, human selection, evidence, provenance, replay, and release machinery unchanged.**
+
+```text
+SourceRequest
+    ↓
+SourceProvider
+    ↓
+ProviderResult
+    ├── artifact_root
+    └── SourceCandidate[]
+            ├── WAV artifact
+            ├── SHA-256 identity
+            ├── audio metadata
+            └── provenance
+```
+
+Contract version: `source_provider_contract_version = 1.0`.
+
+SourceRequest fields:
+
+- request_id
+- intent
+- count
+- hints[]
+- duration_ms?
+- seed?
+
+Provider-specific API configuration remains adapter-local.
+
+ProviderResult fields:
+
+- source_provider_contract_version
+- provider_id
+- provider_kind
+- artifact_root
+- request
+- candidates[]
+
+`artifact_root` is an absolute runtime directory. Candidate relative paths must remain beneath it.
+
+SourceCandidate fields:
+
+- candidate_id
+- provider_id
+- provider_kind
+- relative_path
+- source_id
+- sha256
+- bytes
+- duration_ms
+- sample_rate
+- channels
+- sample_width
+- frames
+- provenance
+
+Identity invariant:
+
+```text
+candidate bytes SHA-256
+      ==
+candidate.sha256
+      ==
+candidate.source_id identity
+      ==
+provenance.sha256
+      ==
+provenance.source_id identity
+```
+
+Reserved provider kinds:
+
+```text
+local_file
+generated
+recorded
+recipe
+other
+```
+
+M1.0 implements `SourceProvider` Protocol, `LocalFileProvider`, `FixtureGeneratedProvider`, Provider Result validation, capability description, Result JSON export, Provenance Ledger export, and CLI execution.
+
+Local provider example:
+
+```bash
+mgal source-provide \
+  --provider local \
+  --audio-root ./audio \
+  --provenance-ledger provenance-ledger.json \
+  --request-id slash \
+  --intent "heavy metallic slash" \
+  --hint metal \
+  --count 4
+```
+
+Explicit hints are strict. No explicit match returns zero candidates.
+
+Fixture-generated example:
+
+```bash
+mgal source-provide \
+  --provider fixture-generated \
+  --artifact-root ./generated \
+  --request-id impact \
+  --intent "short impact" \
+  --count 3 \
+  --duration-ms 120 \
+  --seed 42
+```
+
+The fixture provider is deterministic, offline, and not production audio generation.
+
+Provider validation checks contract version, provider kind and ID, artifact root, request bounds, candidate count and IDs, path containment, artifact existence, byte size, SHA-256, source ID, audio metadata, provenance schema, and provenance fingerprint consistency.
+
+Provider provenance can be exported as a standard M0.8 Ledger with `--provenance-output`.
+
+Authority boundary:
+
+A Provider may acquire/create audio candidates, but must not choose winners, mutate Recipes or Candidate Boards, create/rewrite Evidence, bypass provenance, or release audio directly.
+
+#### M1.0 acceptance
+
+- common SourceRequest / ProviderResult / SourceCandidate contracts exist
+- LocalFileProvider returns real local WAV candidates
+- local provider can attach M0.8 provenance by fingerprint
+- unknown provenance remains explicit
+- explicit hints return zero instead of unrelated candidates
+- fixture-generated provider returns deterministic WAV candidates
+- generated fixture includes provider/model/prompt/seed provenance
+- Provider Result is bound to an absolute artifact root
+- path escape and artifact tampering are rejected
+- malformed provenance is rejected
+- Provider Result can emit a standard Provenance Ledger
+- CLI can write Result JSON and Provenance Ledger JSON
+- Python tests and browser JavaScript checks remain green
+
+## Next provider adapters
 
 \`\`\`text
 SourceProvider
@@ -801,7 +941,7 @@ SourceProvider
   └── RecipeProvider
 \`\`\`
 
-Future AI audio generation plugs into this boundary instead of owning the workflow.
+The Source Provider boundary now exists. Production generated, recorded, and recipe adapters can implement it without changing MGAL core.
 
 ## North star
 
