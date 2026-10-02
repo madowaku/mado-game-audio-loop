@@ -115,3 +115,14 @@ def test_server_exposes_explicit_decision_memory_contract():
     assert "promoted_hashes" in source
     assert 'entry["promotable"]' in source
     assert 'entry["promoted"]' in source
+
+
+def test_server_exposes_decision_context_retrieval_contract():
+    from mgal import server as server_module
+
+    source = Path(server_module.__file__).read_text(encoding="utf-8")
+    assert 'parsed.path == "/api/decision-context"' in source
+    assert "parse_qs(parsed.query)" in source
+    assert "build_decision_context_pack" in source
+    assert '"intent"' in source
+    assert '"limit"' in source
