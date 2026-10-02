@@ -5,6 +5,7 @@ import wave
 
 import pytest
 
+from mgal.cli import main
 from mgal.preference import (
     PreferenceEvidenceError,
     compile_preference_evidence,
@@ -244,3 +245,39 @@ def test_preference_replay_detects_changed_audio(tmp_path: Path):
         match="hash changed",
     ):
         replay_preference_evidence(path, tmp_path)
+
+
+def test_preference_cli_validate_and_replay(tmp_path: Path, capsys):
+    for name, value in (("a.wav", 100), ("b.wav", 200), ("c.wav", 300)):
+        _write_wav(tmp_path / name, value)
+
+    evidence = compile_preference_evidence(
+        _preference_payload(_board()),
+        tmp_path,
+    )
+    evidence_path = tmp_path / "preference.json"
+    evidence_path.write_text(
+        json.dumps(evidence),
+        encoding="utf-8",
+    )
+
+    assert main(["validate-preference", str(evidence_path)]) == 0
+    validated = json.loads(capsys.readouterr().out)
+    assert validated["ok"] is True
+    assert validated["pairs"] == 3
+
+    replay_path = tmp_path / "replay.json"
+    assert main(
+        [
+            "replay-preference",
+            str(evidence_path),
+            "--audio-root",
+            str(tmp_path),
+            "--output",
+            str(replay_path),
+        ]
+    ) == 0
+    replay = json.loads(capsys.readouterr().out)
+    assert replay["ok"] is True
+    assert replay["sources_verified"] == 3
+    assert replay_path.is_file()
