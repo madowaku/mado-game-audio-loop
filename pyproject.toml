@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mado-game-audio-loop"
-version = "0.8.0"
+version = "0.9.0"
 description = "A reproducible local workbench for game sound-effect recipes."
 readme = "README.md"
 requires-python = ">=3.11"
