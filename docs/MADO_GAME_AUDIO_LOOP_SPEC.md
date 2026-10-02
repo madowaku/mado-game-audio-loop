@@ -1624,6 +1624,138 @@ Only durable human decisions remain persisted.
 - Intake-seeded and manually-forked Boards use the same audition controls
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M1.6 Randomized Blind / Preference Session
+
+Goal:
+
+**Hide Candidate position identity as well as source/provider context, collect randomized pairwise preferences, then require an explicit Reveal and Apply step before any durable Candidate decision changes.**
+
+Session-only state:
+
+```text
+mapping[]
+pairs[]
+pairIndex
+votes[]
+revealed
+applied
+```
+
+Candidate Board schema remains 0.1 and contains none of these fields.
+
+#### Random mapping
+
+Up to three Candidates are shuffled into aliases:
+
+```text
+X
+Y
+Z
+```
+
+Randomness uses Browser `crypto.getRandomValues()`.
+
+Candidate card display order follows the randomized alias mapping before Reveal.
+
+#### Pair schedule
+
+Every unique pair is generated exactly once.
+
+For three Candidates:
+
+```text
+3 choose 2 = 3 pair votes
+```
+
+The pair list is shuffled and each pair independently randomizes left/right presentation.
+
+#### Hidden phase
+
+Before Reveal:
+
+- random alias replaces A/B/C label
+- source/provider/prompt/lineage context remains hidden
+- existing Candidate decision badge is replaced by neutral `blind`
+- Edit/Copy controls are hidden
+- decision buttons and reason field are hidden
+- Blind cannot be disabled
+- normal sequence and Previous/Next are disabled
+- Board and active Recipe download are disabled
+
+Preference keyboard contract:
+
+```text
+1           play left
+2           play right
+ArrowLeft   vote left
+ArrowRight  vote right
+R           Reveal after all votes
+P           close session
+Escape      stop audio
+```
+
+Preference keyboard handling intercepts arrows before normal Candidate navigation.
+
+#### Vote aggregation
+
+Each submitted pair records one winner in transient session state.
+
+Win count is computed per Candidate.
+
+A winner exists only when exactly one Candidate has the highest win count.
+
+A three-way `1/1/1` cycle is treated as a tie.
+
+#### Reveal
+
+Reveal is disabled until all pairwise votes are complete.
+
+Reveal displays alias-to-Candidate mapping and win counts and restores ordinary Candidate identity/context.
+
+#### Apply boundary
+
+`Apply winner` is enabled only when:
+
+- Reveal has occurred
+- all pairs are voted
+- exactly one Candidate has the top win count
+- the result has not already been applied
+
+Applying changes only the existing Candidate decision state:
+
+```text
+winner.decision = selected
+```
+
+Any previously selected Candidate is reset to undecided.
+
+Ties are never auto-applied.
+
+Closing a session without Apply preserves the durable Board.
+
+#### M1.6 acceptance
+
+- session requires at least two Candidates
+- up to three Candidates receive randomized X/Y/Z aliases
+- Browser crypto source is used for shuffling
+- pair schedule covers every unique pair once
+- pair order is randomized
+- left/right placement is randomized
+- underlying A/B/C identity is hidden before Reveal
+- previous Candidate decisions are hidden before Reveal
+- Board/Recipe export is disabled before Reveal
+- ordinary Blind toggle cannot expose identity before Reveal
+- normal sequence and navigation are disabled before Reveal
+- pairwise vote keyboard shortcuts override normal navigation
+- Reveal is unavailable until all pairs are voted
+- Reveal maps aliases back to Candidates and shows win counts
+- unique top win count enables Apply winner
+- tie leaves Apply winner disabled
+- Apply winner uses existing selected decision contract
+- Preference state is absent from Board serialization
+- closing without Apply leaves durable Candidate decisions unchanged
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
