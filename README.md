@@ -2,199 +2,201 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → intake → audition → mix → compare → decide → evidence → replay → release**
+**provide → intake → seed → audition → compare → decide → evidence → replay → release**
 
-## Current milestone: M1.3 Provider Intake / Audition Bridge
+## Current milestone: M1.4 Intake Session → Candidate Seed
 
-M1.3 connects Provider output to the Browser Audition Board.
+M1.4 turns one Provider intake session directly into a Candidate Board.
 
-The core flow is now:
+The shortest path is now:
 
 ```text
-Provider Result
-    ↓
+prompt
+  ↓
+Provider candidates
+  ↓
 provider-intake
-    ↓
-canonical normalization
-    ↓
-workspace registration
-    ↓
-workspace provenance merge
-    ↓
-Audition Board live catalog
+  ↓
+intake session
+  ↓
+Seed A/B/C
+  ↓
+direct candidate preview
+  ↓
+human selection
 ```
 
-The Browser Board can stay open while Provider candidates arrive.
+No manual Add layer step is required when the goal is simply to compare Provider alternatives.
 
-## Workspace layout
+## Seed contract
 
-An MGAL audio workspace now has two layers:
+One intake session compiles into the existing Candidate Board 0.1 contract.
 
 ```text
-audio/
-├── incoming/
-│   └── <intake-id>/
-│       ├── candidate-01.wav
-│       └── candidate-02.wav
-└── .mgal/
-    ├── provenance-ledger.json
-    └── intakes/
-        └── <intake-id>/
-            ├── manifest.json
-            ├── provider-result.json
-            └── provenance-ledger.json
+intake candidate 1 → A
+intake candidate 2 → B
+intake candidate 3 → C
 ```
 
-The visible WAV tree stays simple.
+Rules:
 
-The hidden `.mgal` layer stores intake history and workspace provenance.
+- 1 source seeds A
+- 2 sources seed A/B
+- 3 sources seed A/B/C
+- 4+ sources seed the first three
+- each candidate starts as one layer
+- gain = 1.0
+- offset = 0 ms
+- decision = undecided
+- intake request intent becomes Board intent
 
-## Intake a saved Provider Result
+The first intake source is also used as the immutable Base Recipe.
+
+That keeps the existing Candidate Board lineage contract unchanged:
+
+```text
+Base
+├── A r1
+├── B r1
+└── C r1
+```
+
+A equals the Base source. B/C record a one-source difference versus Base.
+
+## CLI seed compiler
+
+The browser is not the only way to use the feature.
 
 ```bash
-mgal provider-intake ./provider-runs/heavy-slash.json \
+mgal intake-seed-board \
   --audio-root ./audio \
-  --intake-id heavy-slash-001
+  --intake-id heavy-slash-001 \
+  --output ./boards/heavy-slash-candidates.json
 ```
 
-The command:
+The resulting JSON is validated by the same Python Candidate Board parser used by Evidence.
 
-1. reloads and validates the saved Provider Result
-2. normalizes every candidate to the M1.2 canonical profile
-3. writes canonical WAVs below `audio/incoming/<intake-id>/`
-4. writes an intake-scoped Provider Result
-5. writes an intake-scoped Provenance Ledger
-6. merges provenance into `audio/.mgal/provenance-ledger.json`
-7. writes and verifies the intake manifest
+So this works immediately:
 
-Canonical profile:
-
-```text
-mgal-pcm16-mono-44100-v1
-44.1 kHz
-mono
-16-bit PCM WAV
+```bash
+mgal validate-board ./boards/heavy-slash-candidates.json
 ```
 
-## Intake identity
+After choosing a winner and saving the updated Board, it can enter the normal strict Evidence path.
 
-If `--intake-id` is omitted, MGAL derives one from:
+## Browser session panel
 
-```text
-request id
-+
-provider id
-+
-Provider Result SHA-256 prefix
-```
-
-The same Provider Result with the same intake ID is idempotent.
-
-A repeated intake verifies existing artifacts and returns:
-
-```json
-{
-  "reused": true
-}
-```
-
-The same intake ID cannot silently point to a different Provider Result.
-
-## Intake manifest
-
-Each intake session records:
-
-```text
-intake_version
-intake_id
-provider_result_sha256
-provider_id
-provider_kind
-request
-normalization_profile_id
-normalized_provider_result_sha256
-candidate_count
-candidates[]
-```
-
-Each candidate records:
-
-- workspace-relative WAV path
-- normalized source ID
-- normalized SHA-256
-- byte size
-- source type
-- generation metadata
-- normalization lineage
-
-The manifest is verified against the current WAV bytes before the workspace Ledger is updated.
-
-## Workspace provenance
-
-Every accepted candidate gets a workspace-relative provenance path.
-
-Example:
-
-```text
-incoming/heavy-slash-001/01-impact-....wav
-```
-
-The central workspace Ledger is:
-
-```text
-audio/.mgal/provenance-ledger.json
-```
-
-It can later be used directly for strict Evidence creation.
-
-Conflicting complete provenance for the same content-addressed source remains an error.
-
-## Audition Board bridge
-
-Run the Browser Board once:
+Run:
 
 ```bash
 mgal serve ./audio
 ```
 
-Then intake new Provider Runs in another terminal.
-
-The browser polls `/api/audio` every 2.5 seconds.
-
-When the catalog changes, only the source list is refreshed.
-
-New intake cards display:
-
-- source type
-- Provider ID
-- intake ID
-- generation Provider
-- generation model
-- prompt / intent
-- normal audio metadata
-
-Provider/intake/prompt text is searchable from the existing Find a sound box.
-
-There is also a manual:
+Provider intakes appear in a dedicated section:
 
 ```text
-↻ Refresh sources
+PROVIDER INTAKES
+
+heavy-slash-001
+stability-audio · stable-audio-3 · 3 sources
+short stylized metallic sword slash
+
+[ Seed A/B/C from intake ]
 ```
 
-button.
+The session panel groups WAVs by intake ID rather than showing only independent files.
 
-## Generated-audio path
+For sessions with more than three sources, the UI clearly marks:
 
-A practical Stable Audio flow is now:
+```text
+first 3 seed
+```
+
+## Seed API
+
+The browser uses the server-side compiler:
+
+```text
+GET /api/intakes/<intake-id>/seed-board
+```
+
+The response is a valid Candidate Board payload.
+
+The browser then hydrates each Recipe source path back into the live audio catalog so existing Web Audio preview and mixer code can be reused.
+
+There is no second Candidate Board implementation hidden in JavaScript.
+
+## Candidate cards
+
+After seeding, Candidate cards show the actual source file name.
+
+Example:
+
+```text
+A   undecided
+1 layer · 0 changes vs base
+01-heavy-slash-....wav
+[ Preview ]
+
+B   undecided
+1 layer · 1 change vs base
+02-heavy-slash-....wav
+[ Preview ]
+
+C   undecided
+1 layer · 1 change vs base
+03-heavy-slash-....wav
+[ Preview ]
+```
+
+The existing controls still work:
+
+- Preview
+- Edit
+- Copy active
+- Favorite
+- Reject
+- Select
+- decision reason
+
+Once seeded, the candidates are ordinary MGAL candidates.
+
+## Board overwrite safety
+
+If a Candidate Board is already active, all intake seed buttons are disabled.
+
+MGAL does not silently replace comparison work.
+
+Use:
+
+```text
+Clear board
+```
+
+to explicitly reset the current Board before seeding another intake session.
+
+Manual `Fork A/B/C` remains available for layered mixes.
+
+The two workflows coexist:
+
+```text
+single-source Provider comparison
+→ Seed A/B/C from intake
+
+layered sound-design comparison
+→ Add layers → Fork A/B/C
+```
+
+## Full generated-audio flow
 
 ```bash
 mgal source-provide \
   --provider stability \
-  --artifact-root ./provider-raw/stability/heavy-slash \
+  --artifact-root ./provider-raw/slash \
   --allow-paid \
   --request-id heavy-slash \
   --intent "short stylized metallic sword slash" \
-  --count 1 \
+  --count 3 \
   --output ./provider-runs/heavy-slash.json
 
 mgal provider-intake ./provider-runs/heavy-slash.json \
@@ -204,113 +206,76 @@ mgal provider-intake ./provider-runs/heavy-slash.json \
 mgal serve ./audio
 ```
 
-If `mgal serve ./audio` is already running, the final command is unnecessary.
-
-The new sound appears automatically.
-
-## Why acquisition and intake remain separate
-
-M1.3 does not combine paid generation and workspace registration into one irreversible command.
-
-Instead:
+Then in the browser:
 
 ```text
-paid acquisition
-      ↓
-saved Provider Result
-      ↓
-free repeatable intake
+Seed A/B/C from intake
+        ↓
+▶ Preview A
+▶ Preview B
+▶ Preview C
+        ↓
+★ Favorite / × Reject / ✓ Select
+        ↓
+Download board JSON
 ```
 
-This means a paid Provider Run can be re-intaken, re-normalized, or moved into another MGAL workspace without buying the audio again.
+The prompt-to-comparison path is now extremely short.
 
-## Browser catalog metadata
+## Why the seed is server-compiled
 
-The server enriches intake WAV rows with:
+The seed compiler lives in Python because Candidate Board is an evidence-bearing contract.
 
-```text
-intake_id
-provider_id
-provider_kind
-request_id
-intent
-source_type
-source_id
-generation_provider
-generation_model
-prompt
-normalization_profile_id
-original_source_id
-```
+That gives one source of truth for:
 
-Ordinary local WAVs continue to work without intake metadata.
+- Base Recipe
+- candidate IDs
+- labels
+- revision
+- parent Recipe
+- lineage
+- decisions
+- source paths
 
-## Existing creative loop remains unchanged
+The Browser only hydrates and edits the validated result.
 
-Once a source is visible in the Board:
+## Existing Evidence chain stays unchanged
+
+M1.4 adds no special intake-only Evidence format.
+
+After seeding:
 
 ```text
-Audition
-  ↓
-Add layer
-  ↓
-Live Mix
-  ↓
-A/B/C Candidate Board
-  ↓
+Candidate Board 0.1
+       ↓
 Human Select
-  ↓
+       ↓
 Evidence Bundle
-  ↓
+       ↓
 Replay / Relink
-  ↓
-Release Pack
+       ↓
+Release / Attribution Pack
 ```
 
-Provider metadata informs the choice but never makes the choice.
+Recipe source paths still point at canonical WAVs under the audio workspace, and workspace provenance remains available at:
 
-## Useful commands
-
-```bash
-mgal provider-describe --provider stability
-
-mgal source-provide \
-  --provider stability \
-  --artifact-root ./provider-raw/stability/run-001 \
-  --allow-paid \
-  --request-id impact \
-  --intent "short metallic impact" \
-  --count 1 \
-  --output ./provider-runs/impact.json
-
-mgal provider-intake ./provider-runs/impact.json \
-  --audio-root ./audio \
-  --intake-id impact-001
-
-mgal serve ./audio
-
-mgal bundle candidate-board.json \
-  --audio-root ./audio \
-  --provenance-ledger ./audio/.mgal/provenance-ledger.json \
-  --require-provenance \
-  --output ./evidence/session-001
-
-mgal replay-bundle ./evidence/session-001 --audio-root ./audio
-mgal release-pack ./evidence/session-001 --output ./release/final
+```text
+audio/.mgal/provenance-ledger.json
 ```
 
 ## Current constraints
 
-- intake accepts saved MGAL Provider Result JSON
-- canonical audio profile remains fixed at 44.1kHz mono PCM16
-- workspace catalog refresh uses lightweight polling, not WebSocket/SSE
-- intake metadata is local JSON, not a database
-- no Provider generation button inside the browser yet
-- no automatic Candidate Board seeding from an intake session yet
-- no archive/prune UI for old intake sessions yet
+- one intake seed uses at most three candidates
+- seed order follows intake manifest order
+- each seeded candidate initially contains one layer
+- Base Recipe is candidate A's source
+- intake seed does not automatically mark a winner
+- existing Candidate Board must be cleared before another intake is seeded
+- no automatic sequential A/B/C playback yet
+- no browser-side Provider generation button yet
 
 ## Design principle
 
-> Providers deliver possibilities. Intake makes them available. Humans decide what becomes the sound.
+> A Provider gives alternatives. M1.4 turns those alternatives directly into a decision surface.
 
-M1.3 closes the gap between generated/acquired audio and the place where the creator can actually listen to it.
+This closes the original prompt → candidates → listen → choose loop without bypassing MGAL's evidence model.
