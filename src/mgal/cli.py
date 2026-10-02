@@ -14,11 +14,14 @@ from .intake import (
 from .normalizer import normalize_provider_result_file
 from .preference import (
     archive_preference_evidence,
-    list_preference_archives,
     load_preference_evidence,
-    replay_preference_archive,
     replay_preference_evidence,
     validate_preference_evidence,
+)
+from .preference_recovery import (
+    list_portable_preference_archives,
+    replay_preference_archive_portable,
+    write_preference_relink_map,
 )
 from .provenance import (
     merge_provenance_ledgers,
@@ -147,6 +150,27 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
 
+    preference_recover = sub.add_parser(
+        "preference-recover",
+        help="Recover moved Preference Archive WAV sources by fingerprint",
+    )
+    preference_recover.add_argument("archive_id")
+    preference_recover.add_argument(
+        "--audio-root",
+        required=True,
+        help="Workspace containing .mgal/preferences",
+    )
+    preference_recover.add_argument(
+        "--search-root",
+        required=True,
+        help="Folder to scan recursively for matching WAV files",
+    )
+    preference_recover.add_argument(
+        "--output",
+        "-o",
+        help="Optional relink-map path; defaults to .mgal/preference-relinks/<archive>.json",
+    )
+
     preference_replay_archive = sub.add_parser(
         "preference-replay-archive",
         help="Verify and replay one archived Preference Session",
@@ -155,6 +179,15 @@ def build_parser() -> argparse.ArgumentParser:
     preference_replay_archive.add_argument(
         "--audio-root",
         required=True,
+        help="Workspace containing .mgal/preferences",
+    )
+    preference_replay_archive.add_argument(
+        "--search-root",
+        help="Optional current source library root; defaults to --audio-root",
+    )
+    preference_replay_archive.add_argument(
+        "--relink-map",
+        help="Optional Preference relink map for moved or renamed WAV files",
     )
     preference_replay_archive.add_argument(
         "--output",
@@ -483,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "preference-list":
         print(
             json.dumps(
-                list_preference_archives(
+                list_portable_preference_archives(
                     args.audio_root,
                 ),
                 ensure_ascii=False,
@@ -492,10 +525,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    if args.command == "preference-replay-archive":
-        result = replay_preference_archive(
+    if args.command == "preference-recover":
+        output = write_preference_relink_map(
             args.audio_root,
             args.archive_id,
+            args.search_root,
+            args.output,
+        )
+        print(output)
+        return 0
+
+    if args.command == "preference-replay-archive":
+        result = replay_preference_archive_portable(
+            args.audio_root,
+            args.archive_id,
+            search_root=args.search_root,
+            relink_map_path=args.relink_map,
         )
         if args.output:
             output = Path(args.output).resolve()
