@@ -415,18 +415,23 @@ def subset_ledger_for_source_index(
             continue
         selected.append(entry)
 
+    if missing_ids:
+        raise ProvenanceLedgerError(
+            "ledger does not cover referenced source fingerprints: "
+            + ",".join(missing_ids)
+        )
+
     complete_entries = sum(1 for entry in selected if entry_is_complete(entry))
     return {
         "provenance_ledger_version": "0.1",
         "scope": "evidence_sources",
         "entry_count": len(selected),
         "expected_source_count": len(source_index["sources"]),
-        "missing_source_ids": missing_ids,
+        "missing_source_ids": [],
         "complete_entries": complete_entries,
         "incomplete_entries": len(selected) - complete_entries,
         "complete": (
-            not missing_ids
-            and len(selected) == len(source_index["sources"])
+            len(selected) == len(source_index["sources"])
             and complete_entries == len(selected)
         ),
         "entries": selected,
