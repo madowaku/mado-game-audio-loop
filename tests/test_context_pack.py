@@ -5,6 +5,7 @@ import wave
 
 import pytest
 
+from mgal.cli import main
 from mgal.context_pack import (
     DecisionContextError,
     build_decision_context_pack,
@@ -329,3 +330,59 @@ def test_context_pack_rejects_automatic_selection_fields(
         match="automatic-selection",
     ):
         validate_decision_context_pack(pack)
+
+
+def test_context_cli_builds_and_verifies_pack(
+    tmp_path: Path,
+    capsys,
+):
+    audio_root = _memory_fixture(tmp_path)
+    output = tmp_path / "context-pack.json"
+
+    assert main(
+        [
+            "decision-context",
+            "metallic sword impact",
+            "--audio-root",
+            str(audio_root),
+            "--limit",
+            "2",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    built = json.loads(capsys.readouterr().out)
+    assert built["returned_entry_count"] == 2
+    assert output.is_file()
+
+    assert main(
+        [
+            "decision-context-verify",
+            str(output),
+            "--audio-root",
+            str(audio_root),
+        ]
+    ) == 0
+    verified = json.loads(capsys.readouterr().out)
+    assert verified["ok"] is True
+    assert verified["fresh"] is True
+
+
+def test_context_pack_contains_no_candidate_action_fields(
+    tmp_path: Path,
+):
+    audio_root = _memory_fixture(tmp_path)
+    pack = build_decision_context_pack(
+        audio_root,
+        "metallic sword impact",
+    )
+    raw = json.dumps(pack)
+
+    for token in (
+        "recommended_candidate",
+        "auto_select",
+        "preference_score",
+        "candidate_ranking",
+        "apply_winner",
+    ):
+        assert token not in raw
