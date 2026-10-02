@@ -521,6 +521,161 @@ Replay result remains valid only if the freshly rendered WAV matches stored `out
 - historical Recipe and Evidence files remain unchanged
 - Python tests and browser JavaScript checks remain green
 
+### MGAL-M0.8 Provenance / License Ledger
+
+Goal:
+
+**Bind source provenance and license declarations to content fingerprints before generated, recorded, purchased, and free-library assets are mixed together at scale.**
+
+Core identity:
+
+```text
+path_hint = human convenience
+sha256    = source identity
+source_id = sha256:<hash>
+```
+
+A central ledger entry stores:
+
+```text
+source_id
+sha256
+bytes
+path_hint
+source_type
+origin
+license
+generation
+recording
+notes
+audio metadata
+```
+
+Supported source types:
+
+```text
+unknown
+free_library
+recorded
+generated
+procedural
+purchased
+commissioned
+other
+```
+
+License status vocabulary:
+
+```text
+unknown
+declared
+owned
+terms
+```
+
+These values are user/provider declarations. MGAL does not infer legal rights.
+
+Create a ledger:
+
+```bash
+mgal provenance-scan ./audio \
+  --output provenance-ledger.json
+```
+
+Update one source:
+
+```bash
+mgal provenance-set provenance-ledger.json metal.wav \
+  --source-type free_library \
+  --creator "Creator Name" \
+  --origin-url "https://..." \
+  --license-status declared \
+  --license-expression "CC0-1.0"
+```
+
+Generated-source example:
+
+```bash
+mgal provenance-set provenance-ledger.json generated.wav \
+  --source-type generated \
+  --license-status terms \
+  --license-expression "provider-terms" \
+  --provider "Provider" \
+  --model "Model" \
+  --prompt "short metallic slash" \
+  --seed "42"
+```
+
+Validate:
+
+```bash
+mgal validate-ledger provenance-ledger.json \
+  --audio-root ./audio
+```
+
+Completeness rules:
+
+- source type is not unknown
+- license status is not unknown
+- declared/terms licenses have a non-empty expression
+- generated sources have provider, model, and prompt
+- recorded sources have recorded_by
+
+Evidence integration:
+
+```bash
+mgal bundle candidates.json \
+  --audio-root ./audio \
+  --provenance-ledger provenance-ledger.json \
+  --require-provenance \
+  --output ./evidence/session-001
+```
+
+The bundle receives a scoped `provenance-ledger.json` containing only referenced source fingerprints.
+
+`source-index.json` includes `source_id=sha256:<hash>` for every source.
+
+If a ledger is supplied it must cover every referenced fingerprint. Metadata may be incomplete only when strict provenance is not requested.
+
+Strict provenance is preflighted before the Evidence directory is created.
+
+The Evidence manifest records:
+
+```json
+{
+  "provenance_required": true
+}
+```
+
+Bundle verification recomputes:
+
+- entry_count
+- expected source count
+- source IDs from source-index SHA-256 values
+- complete/incomplete counts
+- complete status
+
+It does not trust provenance summary fields without recomputation.
+
+Path moves do not change provenance identity. M0.7 relink maps alter only current physical source resolution, while embedded provenance remains tied to the historical fingerprint.
+
+#### M0.8 acceptance
+
+- WAV library can be scanned into a content-addressed ledger
+- unknown provenance is explicit, never guessed
+- ledger entries can record free-library origin and declared license
+- recorded entries can record recorder/date/device
+- generated entries can record provider/model/prompt/seed
+- ledger validation detects source hash drift
+- Evidence source-index records source_id
+- Evidence can embed only referenced provenance entries
+- a supplied ledger must cover every referenced fingerprint
+- strict bundle rejects incomplete provenance before writing output
+- strict policy is persisted in manifest
+- verify/replay recompute provenance completeness
+- relink/replay continues to work because identity is content-based
+- Python tests and browser JavaScript checks remain green
+
 ## Later provider architecture
 
 \`\`\`text
