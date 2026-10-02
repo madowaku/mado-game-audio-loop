@@ -8,7 +8,6 @@ from typing import Any
 
 from .evidence import EvidenceBundleError, verify_evidence_bundle
 from .provenance import (
-    ProvenanceLedgerError,
     entry_is_complete,
     source_id_for_hash,
 )
@@ -94,7 +93,13 @@ def _selected_source_ids(
         source_id = item["source_id"]
         if source_id not in selected_sources:
             ordered_ids.append(source_id)
-            selected_sources[source_id] = item
+            selected_sources[source_id] = {
+                **item,
+                "selected_recipe_paths": [],
+            }
+        paths = selected_sources[source_id]["selected_recipe_paths"]
+        if layer.source not in paths:
+            paths.append(layer.source)
 
     return ordered_ids, selected_sources
 
@@ -287,9 +292,7 @@ def _provenance_report(
         sources.append(
             {
                 "source_id": source_id,
-                "selected_recipe_paths": [
-                    source["relative_path"],
-                ],
+                "selected_recipe_paths": source["selected_recipe_paths"],
                 "sha256": source["sha256"],
                 "bytes": source["bytes"],
                 "source_type": entry["source_type"],
@@ -324,6 +327,15 @@ def build_release_pack(
         verification = verify_evidence_bundle(bundle_dir)
     except EvidenceBundleError as exc:
         raise ReleasePackError(f"Evidence Bundle verification failed: {exc}") from exc
+
+    try:
+        output_dir.relative_to(bundle_dir)
+    except ValueError:
+        pass
+    else:
+        raise ReleasePackError(
+            "release output must be outside the Evidence Bundle"
+        )
 
     if output_dir.exists() and not output_dir.is_dir():
         raise ReleasePackError(f"output path is not a directory: {output_dir}")
@@ -362,6 +374,15 @@ def build_release_pack(
         ),
     )
 
+    evidence_ref = {
+        "evidence_ref_version": "0.1",
+        "evidence_manifest_sha256": _sha256(bundle_dir / "manifest.json"),
+        "selected_candidate_id": verification.get("selected_candidate_id"),
+        "selected_recipe_id": recipe.id,
+        "evidence_output_sha256": _sha256(bundle_dir / "output.wav"),
+    }
+    _write_json(output_dir / "EVIDENCE_REF.json", evidence_ref)
+
     payloads = sorted(
         path
         for path in output_dir.iterdir()
@@ -372,6 +393,7 @@ def build_release_pack(
         "release_name": output_name,
         "selected_recipe_id": recipe.id,
         "selected_candidate_id": verification.get("selected_candidate_id"),
+        "evidence_manifest_sha256": evidence_ref["evidence_manifest_sha256"],
         "source_count": len(entries),
         "file_count": len(payloads),
         "files": [
@@ -450,6 +472,7 @@ def verify_release_pack(pack_dir: str | Path) -> dict[str, Any]:
         "LICENSE_SUMMARY.json",
         "PROVENANCE_REPORT.json",
         "RECIPE.json",
+        "EVIDENCE_REF.json",
     }
     if not required.issubset(seen):
         raise ReleasePackError("release pack is missing required metadata files")
@@ -458,12 +481,104 @@ def verify_release_pack(pack_dir: str | Path) -> dict[str, Any]:
     if len(wavs) != 1:
         raise ReleasePackError("release pack must contain exactly one final WAV")
 
+    recipe = _load_json_object(pack_dir / "RECIPE.json", "RECIPE.json")
+    selected_recipe_id = manifest.get("selected_recipe_id")
+    if recipe.get("id") != selected_recipe_id:
+        raise ReleasePackError(
+            "RECIPE.json id does not match release manifest"
+        )
+
+    license_summary = _load_json_object(
+        pack_dir / "LICENSE_SUMMARY.json",
+        "LICENSE_SUMMARY.json",
+    )
+    if license_summary.get("license_summary_version") != "0.1":
+        raise ReleasePackError("unsupported license_summary_version")
+
+    provenance_report = _load_json_object(
+        pack_dir / "PROVENANCE_REPORT.json",
+        "PROVENANCE_REPORT.json",
+    )
+    if provenance_report.get("provenance_report_version") != "0.1":
+        raise ReleasePackError("unsupported provenance_report_version")
+
+    source_count = manifest.get("source_count")
+    if not isinstance(source_count, int):
+        raise ReleasePackError("release manifest source_count must be an integer")
+    if license_summary.get("source_count") != source_count:
+        raise ReleasePackError(
+            "LICENSE_SUMMARY source_count does not match release manifest"
+        )
+    if provenance_report.get("source_count") != source_count:
+        raise ReleasePackError(
+            "PROVENANCE_REPORT source_count does not match release manifest"
+        )
+
+    license_sources = license_summary.get("sources")
+    provenance_sources = provenance_report.get("sources")
+    if not isinstance(license_sources, list) or not isinstance(provenance_sources, list):
+        raise ReleasePackError("release source summaries must be lists")
+
+    license_ids = {
+        item.get("source_id")
+        for item in license_sources
+        if isinstance(item, dict)
+    }
+    provenance_ids = {
+        item.get("source_id")
+        for item in provenance_sources
+        if isinstance(item, dict)
+    }
+    if len(license_ids) != source_count or license_ids != provenance_ids:
+        raise ReleasePackError(
+            "release provenance/license source sets do not match"
+        )
+
+    selected_candidate_id = manifest.get("selected_candidate_id")
+    if provenance_report.get("selected_candidate_id") != selected_candidate_id:
+        raise ReleasePackError(
+            "PROVENANCE_REPORT candidate does not match release manifest"
+        )
+    if provenance_report.get("selected_recipe_id") != selected_recipe_id:
+        raise ReleasePackError(
+            "PROVENANCE_REPORT recipe does not match release manifest"
+        )
+
+    evidence_ref = _load_json_object(
+        pack_dir / "EVIDENCE_REF.json",
+        "EVIDENCE_REF.json",
+    )
+    if evidence_ref.get("evidence_ref_version") != "0.1":
+        raise ReleasePackError("unsupported evidence_ref_version")
+    if evidence_ref.get("selected_candidate_id") != selected_candidate_id:
+        raise ReleasePackError(
+            "EVIDENCE_REF candidate does not match release manifest"
+        )
+    if evidence_ref.get("selected_recipe_id") != selected_recipe_id:
+        raise ReleasePackError(
+            "EVIDENCE_REF recipe does not match release manifest"
+        )
+    if (
+        evidence_ref.get("evidence_manifest_sha256")
+        != manifest.get("evidence_manifest_sha256")
+    ):
+        raise ReleasePackError(
+            "EVIDENCE_REF manifest hash does not match release manifest"
+        )
+
+    final_wav = wavs[0]
+    if evidence_ref.get("evidence_output_sha256") != _sha256(pack_dir / final_wav):
+        raise ReleasePackError(
+            "final WAV does not match Evidence output hash"
+        )
+
     return {
         "ok": True,
         "release_name": manifest.get("release_name"),
-        "selected_recipe_id": manifest.get("selected_recipe_id"),
-        "selected_candidate_id": manifest.get("selected_candidate_id"),
-        "sources": manifest.get("source_count"),
+        "selected_recipe_id": selected_recipe_id,
+        "selected_candidate_id": selected_candidate_id,
+        "sources": source_count,
         "files_verified": len(seen),
-        "final_wav": wavs[0],
+        "final_wav": final_wav,
+        "evidence_manifest_sha256": manifest.get("evidence_manifest_sha256"),
     }
