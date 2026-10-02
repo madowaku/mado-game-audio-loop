@@ -6,6 +6,12 @@ from pathlib import Path
 
 from .audio import scan_audio
 from .candidate import load_candidate_board
+from .candidate_plan import (
+    create_candidate_plan,
+    list_candidate_plans,
+    load_candidate_plan,
+    validate_candidate_plan,
+)
 from .context_pack import (
     build_decision_context_pack,
     verify_decision_context_pack_against_memory,
@@ -328,6 +334,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate one saved Variation Brief",
     )
     variation_validate.add_argument("brief")
+
+    candidate_plan_compile = sub.add_parser(
+        "candidate-plan-compile",
+        help="Compile a Variation Brief into a non-materialized A/B/C Candidate Plan",
+    )
+    candidate_plan_compile.add_argument("brief")
+    candidate_plan_compile.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    candidate_plan_compile.add_argument(
+        "--output",
+        "-o",
+    )
+
+    candidate_plan_list = sub.add_parser(
+        "candidate-plan-list",
+        help="List saved Candidate Plans",
+    )
+    candidate_plan_list.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    candidate_plan_validate = sub.add_parser(
+        "candidate-plan-validate",
+        help="Validate a Candidate Plan",
+    )
+    candidate_plan_validate.add_argument("plan")
 
     provenance_scan = sub.add_parser(
         "provenance-scan",
@@ -887,6 +922,64 @@ def main(argv: list[str] | None = None) -> int:
                 validate_variation_brief(
                     load_variation_brief(
                         args.brief
+                    )
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "candidate-plan-compile":
+        brief = load_variation_brief(
+            args.brief
+        )
+        result = create_candidate_plan(
+            args.audio_root,
+            brief,
+        )
+        if args.output:
+            output = Path(args.output).resolve()
+            output.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            output.write_text(
+                json.dumps(
+                    result["plan"],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "candidate-plan-list":
+        print(
+            json.dumps(
+                list_candidate_plans(
+                    args.audio_root
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "candidate-plan-validate":
+        print(
+            json.dumps(
+                validate_candidate_plan(
+                    load_candidate_plan(
+                        args.plan
                     )
                 ),
                 ensure_ascii=False,
