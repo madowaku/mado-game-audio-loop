@@ -95,6 +95,61 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
 
 .audio-list { display: grid; gap: 12px; }
 
+.intake-sessions {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid #31372c;
+  border-radius: 14px;
+  background: #151814;
+}
+
+.intake-sessions[hidden] { display: none; }
+
+.intake-sessions-head,
+.intake-session-card,
+.candidate-section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.intake-session-list {
+  display: grid;
+  gap: 8px;
+}
+
+.intake-session-card {
+  padding: 10px 11px;
+  border: 1px solid #2e3429;
+  border-radius: 10px;
+  background: #1c201a;
+}
+
+.intake-session-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.intake-session-meta > span {
+  color: #83897d;
+  font-size: .72rem;
+}
+
+.intake-session-prompt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(680px, 55vw);
+}
+
+.intake-seed {
+  flex: 0 0 auto;
+}
+
 .audio-card {
   padding: 15px;
   border: 1px solid #292c27;
