@@ -7,6 +7,7 @@ from pathlib import Path
 from .audio import scan_audio
 from .candidate import load_candidate_board
 from .evidence import build_evidence_bundle, verify_evidence_bundle
+from .normalizer import normalize_provider_result_file
 from .provenance import (
     merge_provenance_ledgers,
     update_provenance_entry,
@@ -190,6 +191,27 @@ def build_parser() -> argparse.ArgumentParser:
     source_provide.add_argument("--output", "-o")
     source_provide.add_argument("--provenance-output")
 
+    provider_normalize = sub.add_parser(
+        "provider-normalize",
+        help="Normalize a saved Provider Result to MGAL canonical WAV",
+    )
+    provider_normalize.add_argument("result")
+    provider_normalize.add_argument(
+        "--output-root",
+        required=True,
+        help="Directory for normalized canonical WAV artifacts",
+    )
+    provider_normalize.add_argument(
+        "--output",
+        "-o",
+        required=True,
+        help="Normalized Provider Result JSON",
+    )
+    provider_normalize.add_argument(
+        "--provenance-output",
+        help="Optional normalized Provenance Ledger JSON",
+    )
+
     provider_describe = sub.add_parser(
         "provider-describe",
         help="Describe one Source Provider and its capabilities",
@@ -358,6 +380,26 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 verify_release_pack(args.pack_dir),
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "provider-normalize":
+        normalized = normalize_provider_result_file(
+            args.result,
+            args.output_root,
+        )
+        write_provider_result(normalized, args.output)
+        if args.provenance_output:
+            write_provider_provenance_ledger(
+                normalized,
+                args.provenance_output,
+            )
+        print(
+            json.dumps(
+                provider_result_to_dict(normalized),
+                ensure_ascii=False,
                 indent=2,
             )
         )
