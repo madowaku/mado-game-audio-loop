@@ -28,6 +28,10 @@ const candidateHelp = document.querySelector("#candidate-help");
 const downloadBoardButton = document.querySelector("#download-board");
 const mixerTitle = document.querySelector("#mixer-title");
 const refreshSourcesButton = document.querySelector("#refresh-sources");
+const intakeSessions = document.querySelector("#intake-sessions");
+const intakeSessionList = document.querySelector("#intake-session-list");
+const intakeSessionCount = document.querySelector("#intake-session-count");
+const clearBoardButton = document.querySelector("#clear-board");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -320,6 +324,26 @@ function scheduleMixRestart() {
   }, 120);
 }
 
+function soundByPath(relativePath) {
+  return state.sounds.find(function (sound) {
+    return sound.relative_path === relativePath;
+  }) || null;
+}
+
+function makeLayerFromRecipeLayer(recipeLayer) {
+  const sound = soundByPath(recipeLayer.source);
+  if (!sound) {
+    throw new Error("Seed source is missing from catalog: " + recipeLayer.source);
+  }
+  return {
+    sound: sound,
+    gain: Number(recipeLayer.gain ?? 1.0),
+    offset_ms: Number(recipeLayer.offset_ms ?? 0),
+    muted: false,
+    solo: false,
+  };
+}
+
 function makeLayer(sound) {
   return {
     sound: sound,
@@ -328,6 +352,139 @@ function makeLayer(sound) {
     muted: false,
     solo: false,
   };
+}
+
+function intakeGroups() {
+  const groups = new Map();
+
+  state.sounds.forEach(function (sound) {
+    if (!sound.intake || !sound.intake.intake_id) return;
+    const id = sound.intake.intake_id;
+    if (!groups.has(id)) {
+      groups.set(id, {
+        id: id,
+        provider: sound.intake.generation_provider || sound.intake.provider_id || "provider",
+        model: sound.intake.generation_model || "",
+        intent: sound.intake.prompt || sound.intake.intent || "",
+        sounds: [],
+      });
+    }
+    groups.get(id).sounds.push(sound);
+  });
+
+  return Array.from(groups.values())
+    .map(function (group) {
+      group.sounds.sort(function (a, b) {
+        return a.relative_path.localeCompare(b.relative_path);
+      });
+      return group;
+    })
+    .sort(function (a, b) {
+      return a.id.localeCompare(b.id);
+    });
+}
+
+async function seedIntakeSession(intakeId, button) {
+  if (state.candidates.length > 0) return;
+
+  button.disabled = true;
+  button.textContent = "Seeding…";
+
+  try {
+    const response = await fetch(
+      "/api/intakes/" + encodeURIComponent(intakeId) + "/seed-board",
+      { cache: "no-store" }
+    );
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not seed intake");
+    }
+
+    intent.value = payload.intent || "game sound effect";
+    state.boardBaseRecipe = payload.base_recipe;
+    state.candidates = payload.candidates.map(function (candidate) {
+      return {
+        id: candidate.id,
+        label: candidate.label,
+        parent_recipe_id: candidate.parent_recipe_id,
+        revision: candidate.revision,
+        lineage: candidate.lineage,
+        layers: candidate.recipe.layers.map(makeLayerFromRecipeLayer),
+        decision: candidate.decision.status,
+        reason: candidate.decision.reason,
+      };
+    });
+    state.activeCandidateId =
+      payload.active_candidate_id ||
+      (state.candidates[0] ? state.candidates[0].id : null);
+
+    const active = selectedCandidate();
+    state.selected = active ? active.layers : [];
+    stopMix();
+    renderRecipe();
+    renderCandidates();
+    renderIntakeSessions();
+    status.textContent =
+      "Seeded " +
+      String(state.candidates.length) +
+      " candidate" +
+      (state.candidates.length === 1 ? "" : "s") +
+      " from intake " +
+      intakeId;
+  } catch (error) {
+    status.textContent = "Intake seed failed: " + error.message;
+    renderIntakeSessions();
+  }
+}
+
+function renderIntakeSessions() {
+  const groups = intakeGroups();
+  intakeSessionList.replaceChildren();
+  intakeSessionCount.textContent = String(groups.length);
+  intakeSessions.hidden = groups.length === 0;
+
+  groups.forEach(function (group) {
+    const card = document.createElement("article");
+    card.className = "intake-session-card";
+
+    const meta = document.createElement("div");
+    meta.className = "intake-session-meta";
+
+    const title = document.createElement("strong");
+    title.textContent = group.id;
+
+    const detail = document.createElement("span");
+    const comparableCount = Math.min(3, group.sounds.length);
+    detail.textContent =
+      group.provider +
+      (group.model ? " · " + group.model : "") +
+      " · " +
+      String(group.sounds.length) +
+      " source" +
+      (group.sounds.length === 1 ? "" : "s") +
+      (group.sounds.length > 3 ? " · first 3 seed" : "");
+
+    const prompt = document.createElement("span");
+    prompt.className = "intake-session-prompt";
+    prompt.textContent = group.intent || "No prompt metadata";
+
+    meta.append(title, detail, prompt);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "primary compact intake-seed";
+    button.textContent =
+      "Seed " +
+      ["A", "B", "C"].slice(0, comparableCount).join("/") +
+      " from intake";
+    button.disabled = state.candidates.length > 0 || comparableCount === 0;
+    button.addEventListener("click", function () {
+      seedIntakeSession(group.id, button);
+    });
+
+    card.append(meta, button);
+    intakeSessionList.appendChild(card);
+  });
 }
 
 function renderSounds(sounds) {
@@ -539,6 +696,7 @@ function renderRecipe() {
   seedCandidatesButton.disabled = state.selected.length === 0 || state.candidates.length > 0;
   stopMixButton.disabled = state.mixVoices.length === 0;
   downloadBoardButton.disabled = state.candidates.length === 0;
+  clearBoardButton.disabled = state.candidates.length === 0;
 
   document.querySelectorAll(".audio-card").forEach(function (card) {
     const path = card.querySelector(".file-path").textContent;
@@ -781,6 +939,7 @@ function renderCandidates() {
     candidateBoard.appendChild(renderCandidateCard(candidate));
   });
   downloadBoardButton.disabled = false;
+  clearBoardButton.disabled = false;
 }
 
 function boardPayload() {
@@ -834,6 +993,18 @@ downloadBoardButton.addEventListener("click", function () {
 
 seedCandidatesButton.addEventListener("click", seedCandidates);
 
+clearBoardButton.addEventListener("click", function () {
+  stopAll();
+  state.candidates = [];
+  state.activeCandidateId = null;
+  state.boardBaseRecipe = null;
+  state.selected = [];
+  renderRecipe();
+  renderCandidates();
+  renderIntakeSessions();
+  status.textContent = "Candidate Board cleared";
+});
+
 function applyFilter() {
   const query = filter.value.trim().toLowerCase();
   document.querySelectorAll(".audio-card").forEach(function (card) {
@@ -877,6 +1048,7 @@ async function refreshCatalog(options) {
       state.sounds = sounds;
       state.catalogSignature = signature;
       renderSounds(state.sounds);
+      renderIntakeSessions();
       applyFilter();
     }
 
