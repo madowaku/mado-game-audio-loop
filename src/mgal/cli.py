@@ -12,6 +12,11 @@ from .intake import (
     write_intake_candidate_seed,
 )
 from .normalizer import normalize_provider_result_file
+from .preference import (
+    load_preference_evidence,
+    replay_preference_evidence,
+    validate_preference_evidence,
+)
 from .provenance import (
     merge_provenance_ledgers,
     update_provenance_entry,
@@ -88,6 +93,28 @@ def build_parser() -> argparse.ArgumentParser:
     replay_bundle.add_argument(
         "--relink-map",
         help="Optional relink-map JSON for moved or renamed source WAV files",
+    )
+
+    validate_preference = sub.add_parser(
+        "validate-preference",
+        help="Validate a Preference Session Evidence JSON file",
+    )
+    validate_preference.add_argument("evidence")
+
+    replay_preference = sub.add_parser(
+        "replay-preference",
+        help="Verify Preference Evidence sources and reconstruct pair order",
+    )
+    replay_preference.add_argument("evidence")
+    replay_preference.add_argument(
+        "--audio-root",
+        required=True,
+        help="Folder containing the Candidate source WAV files",
+    )
+    replay_preference.add_argument(
+        "--output",
+        "-o",
+        help="Optional JSON file for the reconstructed replay plan",
     )
 
     provenance_scan = sub.add_parser(
@@ -349,6 +376,43 @@ def main(argv: list[str] | None = None) -> int:
                     output_path=args.output,
                     relink_map_path=args.relink_map,
                 ),
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "validate-preference":
+        evidence = load_preference_evidence(args.evidence)
+        print(
+            json.dumps(
+                validate_preference_evidence(evidence),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "replay-preference":
+        result = replay_preference_evidence(
+            args.evidence,
+            args.audio_root,
+        )
+        if args.output:
+            output = Path(args.output).resolve()
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
+                json.dumps(
+                    result,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
                 indent=2,
             )
         )
