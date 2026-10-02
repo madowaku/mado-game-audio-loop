@@ -5,12 +5,14 @@ import wave
 
 import pytest
 
+from mgal.cli import main
 from mgal.candidate_plan import (
     compile_candidate_plan,
 )
 from mgal.recipe_materializer import (
     RecipeMaterializerError,
     build_materialized_recipe_set,
+    list_materialized_recipe_sets,
     materialize_candidate_plan,
     validate_materialized_recipe_set,
     verify_materialized_recipe_set,
@@ -532,3 +534,106 @@ def test_materialized_set_verification_detects_source_drift(
             recipe_set,
             audio_root,
         )
+
+
+def test_materializer_cli_build_list_verify(
+    tmp_path: Path,
+    capsys,
+):
+    audio_root = _workspace(
+        tmp_path
+    )
+    plan = _plan(
+        audio_root
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(plan),
+        encoding="utf-8",
+    )
+    recipe_path = tmp_path / "recipe.json"
+    recipe_path.write_text(
+        json.dumps(_recipe()),
+        encoding="utf-8",
+    )
+    output = tmp_path / "set-copy.json"
+
+    assert main(
+        [
+            "candidate-plan-materialize",
+            str(plan_path),
+            str(recipe_path),
+            "--audio-root",
+            str(audio_root),
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    built = json.loads(
+        capsys.readouterr().out
+    )
+    assert built[
+        "recipe_set"
+    ]["materialized_recipe_set_version"] == "0.1"
+    assert output.is_file()
+
+    assert main(
+        [
+            "materialized-recipe-list",
+            "--audio-root",
+            str(audio_root),
+        ]
+    ) == 0
+    listing = json.loads(
+        capsys.readouterr().out
+    )
+    assert len(listing) == 1
+    assert [
+        item["role"]
+        for item in listing[0][
+            "variants"
+        ]
+    ] == [
+        "control",
+        "hypothesis",
+        "contrast",
+    ]
+
+    assert main(
+        [
+            "materialized-recipe-verify",
+            str(output),
+            "--audio-root",
+            str(audio_root),
+        ]
+    ) == 0
+    verified = json.loads(
+        capsys.readouterr().out
+    )
+    assert verified["fresh"] is True
+
+
+def test_materialized_list_contains_no_candidate_selection(
+    tmp_path: Path,
+):
+    audio_root = _workspace(
+        tmp_path
+    )
+    materialize_candidate_plan(
+        audio_root,
+        _plan(audio_root),
+        _recipe(),
+    )
+    listing = list_materialized_recipe_sets(
+        audio_root
+    )
+    raw = json.dumps(listing)
+
+    for token in (
+        "selected_candidate_id",
+        "candidate_decision",
+        "recommended_candidate",
+        "auto_select",
+        "apply_winner",
+    ):
+        assert token not in raw
