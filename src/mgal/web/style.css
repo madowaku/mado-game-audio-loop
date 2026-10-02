@@ -866,6 +866,75 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   line-height: 1.4;
 }
 
+.variation-brief-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.candidate-plan-shelf {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #373329;
+}
+
+.candidate-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.candidate-plan-head h3 {
+  margin: 2px 0 0;
+  font-size: .86rem;
+}
+
+.candidate-plan-list {
+  display: grid;
+  gap: 7px;
+}
+
+.candidate-plan-card {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid #3a372e;
+  border-radius: 9px;
+  background: #201e19;
+}
+
+.candidate-plan-card > span {
+  color: #8d8a80;
+  font-size: .68rem;
+  line-height: 1.4;
+}
+
+.candidate-plan-variants {
+  display: grid;
+  gap: 5px;
+}
+
+.candidate-plan-variant {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 7px;
+  border: 1px solid #343128;
+  border-radius: 7px;
+  font-size: .69rem;
+}
+
+.candidate-plan-variant > span {
+  color: #929086;
+  text-align: right;
+}
+
+.candidate-plan-variant.manual-required {
+  border-color: #7b6734;
+}
+
 .candidate-board { display: grid; gap: 10px; margin: 12px 0; }
 
 .candidate-card {
