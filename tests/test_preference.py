@@ -200,7 +200,7 @@ def test_preference_evidence_rejects_apply_that_does_not_match_board(
 
     with pytest.raises(
         PreferenceEvidenceError,
-        match="Board selection",
+        match="selected Candidate Board decision",
     ):
         compile_preference_evidence(
             _preference_payload(
