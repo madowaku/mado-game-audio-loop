@@ -102,6 +102,52 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   background: #181a17;
 }
 
+.audio-card.intake-card {
+  border-color: #3d4930;
+  box-shadow: inset 3px 0 0 #8ca94a;
+}
+
+.source-context {
+  display: grid;
+  gap: 7px;
+  margin-top: 11px;
+  padding: 9px 10px;
+  border: 1px solid #2d3328;
+  border-radius: 9px;
+  background: #141713;
+}
+
+.source-context[hidden] { display: none; }
+
+.source-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.source-type-badge,
+.provider-badge,
+.intake-badge {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #c9d5b2;
+  background: #262d21;
+  font-size: .67rem;
+  font-weight: 800;
+}
+
+.source-type-badge {
+  color: #111210;
+  background: #cceb67;
+}
+
+.source-prompt {
+  margin: 0;
+  color: #a5aa9f;
+  font-size: .75rem;
+  line-height: 1.45;
+}
+
 .card-head, .card-actions, .panel-heading, .mix-transport, .candidate-section-head {
   display: flex;
   align-items: center;
