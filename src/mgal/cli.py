@@ -8,6 +8,7 @@ from .audio import scan_audio
 from .candidate import load_candidate_board
 from .evidence import build_evidence_bundle, verify_evidence_bundle
 from .provenance import (
+    merge_provenance_ledgers,
     update_provenance_entry,
     validate_provenance_ledger,
     write_provenance_ledger,
@@ -121,6 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_ledger.add_argument("ledger")
     validate_ledger.add_argument("--audio-root")
+
+    provenance_merge = sub.add_parser(
+        "provenance-merge",
+        help="Merge provenance ledgers by content source_id",
+    )
+    provenance_merge.add_argument("ledgers", nargs="+")
+    provenance_merge.add_argument("--output", "-o", required=True)
 
     release_pack = sub.add_parser(
         "release-pack",
@@ -327,6 +335,14 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "provenance-merge":
+        output = merge_provenance_ledgers(
+            args.ledgers,
+            args.output,
+        )
+        print(output)
         return 0
 
     if args.command == "release-pack":
