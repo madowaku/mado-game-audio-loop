@@ -126,3 +126,14 @@ def test_server_exposes_decision_context_retrieval_contract():
     assert "build_decision_context_pack" in source
     assert '"intent"' in source
     assert '"limit"' in source
+
+
+def test_server_exposes_delta_inspector_contract():
+    from mgal import server as server_module
+
+    source = Path(server_module.__file__).read_text(encoding="utf-8")
+    assert 'parsed.path == "/api/decision-context-inspect"' in source
+    assert "build_delta_inspector_pack" in source
+    assert '"context_pack"' in source
+    assert '"current_recipe"' in source
+    assert "DeltaInspectorError" in source
