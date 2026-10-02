@@ -7,6 +7,7 @@ from pathlib import Path
 from .audio import scan_audio
 from .candidate import load_candidate_board
 from .evidence import build_evidence_bundle, verify_evidence_bundle
+from .intake import build_provider_intake
 from .normalizer import normalize_provider_result_file
 from .provenance import (
     merge_provenance_ledgers,
@@ -190,6 +191,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     source_provide.add_argument("--output", "-o")
     source_provide.add_argument("--provenance-output")
+
+    provider_intake = sub.add_parser(
+        "provider-intake",
+        help="Normalize and register Provider candidates in an MGAL audio workspace",
+    )
+    provider_intake.add_argument("result")
+    provider_intake.add_argument(
+        "--audio-root",
+        required=True,
+        help="MGAL audio workspace served by the Audition Board",
+    )
+    provider_intake.add_argument(
+        "--intake-id",
+        help="Optional stable intake session ID",
+    )
 
     provider_normalize = sub.add_parser(
         "provider-normalize",
@@ -380,6 +396,20 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 verify_release_pack(args.pack_dir),
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "provider-intake":
+        print(
+            json.dumps(
+                build_provider_intake(
+                    args.result,
+                    args.audio_root,
+                    intake_id=args.intake_id,
+                ),
+                ensure_ascii=False,
                 indent=2,
             )
         )
