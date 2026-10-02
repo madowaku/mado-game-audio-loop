@@ -931,6 +931,8 @@ function renderCandidates() {
   if (state.candidates.length === 0) {
     candidateHelp.hidden = false;
     downloadBoardButton.disabled = true;
+    clearBoardButton.disabled = true;
+    renderIntakeSessions();
     return;
   }
 
@@ -940,6 +942,7 @@ function renderCandidates() {
   });
   downloadBoardButton.disabled = false;
   clearBoardButton.disabled = false;
+  renderIntakeSessions();
 }
 
 function boardPayload() {
