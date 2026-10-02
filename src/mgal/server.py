@@ -9,6 +9,12 @@ from urllib.parse import quote, unquote, urlparse
 import webbrowser
 
 from .audio import read_wav_metadata
+from .decision_memory import (
+    DecisionMemoryError,
+    decision_memory_view,
+    load_decision_memory,
+    promote_preference_archive,
+)
 from .preference import (
     PreferenceEvidenceError,
     archive_preference_evidence,
@@ -96,9 +102,39 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 return
 
             if parsed.path == "/api/preferences":
-                self._send_json(
-                    list_portable_preference_archives(root)
-                )
+                archives = list_portable_preference_archives(root)
+                try:
+                    memory = load_decision_memory(root)
+                    promoted_hashes = {
+                        item["archive_evidence_sha256"]
+                        for item in memory["promotions"]
+                    }
+                except DecisionMemoryError:
+                    promoted_hashes = set()
+
+                for entry in archives:
+                    evidence_hash = entry.get(
+                        "archive_evidence_sha256"
+                    )
+                    entry["promotable"] = (
+                        evidence_hash is not None
+                    )
+                    entry["promoted"] = (
+                        evidence_hash in promoted_hashes
+                    )
+                self._send_json(archives)
+                return
+
+            if parsed.path == "/api/decision-memory":
+                try:
+                    payload = decision_memory_view(root)
+                except DecisionMemoryError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
                 return
 
             if (
@@ -173,6 +209,28 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+
+            if (
+                parsed.path.startswith("/api/preferences/")
+                and parsed.path.endswith("/promote")
+            ):
+                encoded_id = parsed.path[
+                    len("/api/preferences/") : -len("/promote")
+                ].strip("/")
+                archive_id = unquote(encoded_id)
+                try:
+                    payload = promote_preference_archive(
+                        root,
+                        archive_id,
+                    )
+                except DecisionMemoryError as exc:
+                    self._send_json_error(
+                        HTTPStatus.BAD_REQUEST,
+                        str(exc),
+                    )
+                    return
+                self._send_json(payload)
+                return
 
             if (
                 parsed.path.startswith("/api/preferences/")
