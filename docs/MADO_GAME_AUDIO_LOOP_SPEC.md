@@ -1372,6 +1372,131 @@ A saved paid generation can therefore be re-intaken without another provider cha
 - manual catalog refresh remains available
 - Python tests and Browser JavaScript checks remain green
 
+### MGAL-M1.4 Intake Session → Candidate Seed
+
+Goal:
+
+**Compile an intake session directly into a valid Candidate Board so Provider alternatives can be compared without manually adding each WAV as a layer first.**
+
+Seed mapping:
+
+```text
+intake source 1 → Candidate A
+intake source 2 → Candidate B
+intake source 3 → Candidate C
+```
+
+Cardinality:
+
+- 1 intake source → A
+- 2 intake sources → A/B
+- 3 intake sources → A/B/C
+- 4+ intake sources → first three only
+
+Every seeded candidate starts with:
+
+```text
+one layer
+gain = 1.0
+offset_ms = 0
+decision = undecided
+revision = 1
+```
+
+The intake request intent becomes Candidate Board intent.
+
+Candidate A's source is also compiled into the immutable Base Recipe.
+
+All seeded candidates use normal `fork` lineage from that Base Recipe.
+
+No Candidate Board schema version change is required.
+
+#### Seed compiler
+
+Python contract:
+
+```text
+build_intake_candidate_seed(audio_root, intake_id)
+```
+
+The compiler:
+
+1. resolves the intake manifest safely beneath `.mgal/intakes`
+2. verifies intake WAV hashes
+3. reads request intent and candidate order
+4. selects at most three sources
+5. builds Base Recipe and Candidate A/B/C Recipes
+6. compiles revision/parent/lineage fields
+7. validates the result with `parse_candidate_board()`
+
+CLI:
+
+```bash
+mgal intake-seed-board \
+  --audio-root ./audio \
+  --intake-id heavy-slash-001 \
+  --output candidate-board.json
+```
+
+#### Browser API
+
+```text
+GET /api/intakes/<intake-id>/seed-board
+```
+
+The endpoint returns the exact server-compiled Board payload.
+
+The Browser hydrates Recipe layer source paths back to catalog Sound objects and reuses the existing Candidate Board preview/mixer code.
+
+#### Intake session UI
+
+The Browser groups catalog rows by intake ID and renders an intake session panel with:
+
+- intake ID
+- Provider/model
+- source count
+- prompt/intent
+- Seed A, A/B, or A/B/C action
+- `first 3 seed` notice when intake has more than three sources
+
+Seeded Candidate cards display their source filename.
+
+#### Overwrite safety
+
+When `state.candidates.length > 0`, intake seed buttons are disabled.
+
+A dedicated `Clear board` action explicitly resets:
+
+- Candidate Board
+- active candidate
+- Base Recipe
+- selected layers
+
+Only then can another intake session be seeded.
+
+Manual layered-mix `Fork A/B/C` remains unchanged.
+
+#### M1.4 acceptance
+
+- intake manifest can compile into Candidate Board 0.1
+- compiled Board passes Python Candidate Board validation
+- one-source intake seeds A only
+- two-source intake can seed A/B
+- three-source intake seeds A/B/C
+- four-plus-source intake is capped at first three
+- Board intent comes from intake request intent
+- Base Recipe uses first seeded source
+- every candidate has valid fork lineage
+- CLI can write a seed Board JSON
+- Browser exposes intake sessions as grouped comparison sources
+- Browser seed action uses server-compiled Board
+- seeded candidate Recipes hydrate to live catalog sounds
+- Candidate cards show seeded source filenames
+- active Board disables other intake seed actions
+- Clear board explicitly re-enables intake seeding
+- manual Fork A/B/C workflow remains available
+- Python tests and Browser JavaScript checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
