@@ -25,6 +25,7 @@ const state = {
   deltaInspectorStale: false,
   variationBriefs: [],
   candidatePlans: [],
+  materializedRecipeSets: [],
 };
 
 const list = document.querySelector("#audio-list");
@@ -123,6 +124,9 @@ const variationBriefList = document.querySelector("#variation-brief-list");
 const refreshCandidatePlansButton = document.querySelector("#refresh-candidate-plans");
 const candidatePlanEmpty = document.querySelector("#candidate-plan-empty");
 const candidatePlanList = document.querySelector("#candidate-plan-list");
+const refreshMaterializedRecipesButton = document.querySelector("#refresh-materialized-recipes");
+const materializedRecipeEmpty = document.querySelector("#materialized-recipe-empty");
+const materializedRecipeList = document.querySelector("#materialized-recipe-list");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -1673,6 +1677,41 @@ function renderCandidatePlans() {
     listen.textContent =
       "Listen for: " + plan.listening_for;
 
+    const actions = document.createElement("div");
+    actions.className = "variation-brief-actions";
+    const existingSet = state.materializedRecipeSets.find(function (item) {
+      return item.candidate_plan_id === plan.plan_id;
+    });
+    const materialize = document.createElement("button");
+    materialize.type = "button";
+    materialize.className = "secondary compact";
+
+    const supported = plan.ready_for_materialization &&
+      plan.variants.slice(1).every(function (variant) {
+        return (
+          variant.change &&
+          ["gain", "offset", "fade"].includes(variant.change.dimension) &&
+          ["increase", "decrease"].includes(variant.change.action)
+        );
+      });
+
+    if (existingSet) {
+      materialize.disabled = true;
+      materialize.textContent = "Recipes ready";
+    } else if (!plan.ready_for_materialization) {
+      materialize.disabled = true;
+      materialize.textContent = "Resolve plan first";
+    } else if (!supported) {
+      materialize.disabled = true;
+      materialize.textContent = "Materializer unsupported";
+    } else {
+      materialize.textContent = "Materialize recipes";
+      materialize.addEventListener("click", function () {
+        materializeCandidatePlan(plan.plan_id, materialize);
+      });
+    }
+    actions.appendChild(materialize);
+
     const variants = document.createElement("div");
     variants.className = "candidate-plan-variants";
     plan.variants.forEach(function (variant) {
@@ -1699,9 +1738,146 @@ function renderCandidatePlans() {
       variants.appendChild(row);
     });
 
-    card.append(title, meta, listen, variants);
+    card.append(title, meta, listen, actions, variants);
     candidatePlanList.appendChild(card);
   });
+}
+
+function formatMaterializedApplication(application) {
+  if (!application) return "control · unchanged";
+  return (
+    application.scope +
+    " · " +
+    application.dimension +
+    " " +
+    application.action +
+    " " +
+    String(application.amount) +
+    (application.unit ? " " + application.unit : "")
+  );
+}
+
+function renderMaterializedRecipeSets() {
+  materializedRecipeList.replaceChildren();
+  materializedRecipeEmpty.hidden =
+    state.materializedRecipeSets.length > 0;
+
+  state.materializedRecipeSets.slice().reverse().forEach(function (recipeSet) {
+    const card = document.createElement("article");
+    card.className = "materialized-recipe-card";
+
+    const title = document.createElement("strong");
+    title.textContent = recipeSet.hypothesis;
+
+    const meta = document.createElement("span");
+    meta.textContent =
+      recipeSet.materialization_id +
+      " · source " +
+      recipeSet.source_recipe_id;
+
+    const listen = document.createElement("span");
+    listen.textContent =
+      "Listen for: " + recipeSet.listening_for;
+
+    const variants = document.createElement("div");
+    variants.className = "candidate-plan-variants";
+    recipeSet.variants.forEach(function (variant) {
+      const row = document.createElement("div");
+      row.className = "candidate-plan-variant";
+
+      const label = document.createElement("strong");
+      label.textContent =
+        variant.slot +
+        " · " +
+        variant.role +
+        " · " +
+        variant.recipe_id;
+
+      const detail = document.createElement("span");
+      detail.textContent =
+        formatMaterializedApplication(
+          variant.application
+        );
+
+      row.append(label, detail);
+      variants.appendChild(row);
+    });
+
+    card.append(title, meta, listen, variants);
+    materializedRecipeList.appendChild(card);
+  });
+}
+
+async function refreshMaterializedRecipeSets() {
+  try {
+    const response = await fetch(
+      "/api/materialized-recipe-sets",
+      { cache: "no-store" }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not load Materialized Recipe Sets"
+      );
+    }
+    state.materializedRecipeSets = result.filter(function (item) {
+      return item.ok !== false;
+    });
+    renderMaterializedRecipeSets();
+    renderCandidatePlans();
+  } catch (error) {
+    status.textContent =
+      "Materialized Recipe list failed: " + error.message;
+  }
+}
+
+async function materializeCandidatePlan(planId, button) {
+  button.disabled = true;
+  button.textContent = "Materializing…";
+
+  try {
+    const response = await fetch(
+      "/api/materialized-recipe-sets",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          plan_id: planId,
+          current_recipe: recipePayload(),
+        }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Could not materialize Candidate Plan"
+      );
+    }
+    if (
+      !result.recipe_set ||
+      !result.recipe_set.authority ||
+      result.recipe_set.authority.candidate_board_mutation !== "none" ||
+      result.recipe_set.authority.candidate_selection !== "none" ||
+      result.recipe_set.authority.source_generation !== "none"
+    ) {
+      throw new Error(
+        "Materialized Recipe Set authority boundary is invalid"
+      );
+    }
+
+    await refreshMaterializedRecipeSets();
+    status.textContent =
+      "Recipes materialized · " +
+      result.recipe_set.materialization_id +
+      (result.saved.reused ? " · reused" : "");
+  } catch (error) {
+    status.textContent =
+      "Recipe materialization failed: " + error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function refreshCandidatePlans() {
@@ -2932,6 +3108,7 @@ refreshDecisionMemoryButton.addEventListener("click", function () {
   refreshDecisionMemory({ quiet: false });
 });
 refreshCandidatePlansButton.addEventListener("click", refreshCandidatePlans);
+refreshMaterializedRecipesButton.addEventListener("click", refreshMaterializedRecipeSets);
 loadDecisionContextButton.addEventListener("click", loadDecisionContext);
 downloadDecisionContextButton.addEventListener("click", downloadDecisionContext);
 inspectCurrentDeltasButton.addEventListener("click", inspectCurrentDeltas);
@@ -3169,6 +3346,7 @@ async function boot() {
   await refreshCatalog({ quiet: false });
   await refreshPreferenceArchive({ quiet: true });
   await refreshDecisionMemory({ quiet: true });
+  await refreshMaterializedRecipeSets();
   await refreshCandidatePlans();
   await refreshVariationBriefs();
   updateAuditionControls();
