@@ -31,6 +31,7 @@ def test_candidate_board_static_contract():
         "preference-right-vote",
         "preference-reveal-button",
         "preference-apply",
+        "preference-evidence",
         "preference-close",
     ):
         assert f'id="{element_id}"' in html
@@ -84,6 +85,10 @@ def test_candidate_board_static_contract():
         "renderPreferenceSession",
         "displayCandidateLabel",
         "candidatesForDisplay",
+        "preferenceEvidenceRequest",
+        "downloadPreferenceEvidence",
+        "/api/preference-evidence",
+        "appliedCandidateId",
     ):
         assert token in js
 
@@ -250,3 +255,18 @@ def test_preference_keyboard_intercepts_pairwise_vote_before_navigation():
     assert 'if (event.key === "2")' in keyboard
     assert 'if (key === "r")' in keyboard
     assert 'if (key === "p")' in keyboard
+
+
+def test_preference_evidence_export_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+
+    assert "Download evidence" in html
+    assert 'method: "POST"' in js
+    assert '"Content-Type": "application/json"' in js
+    assert "candidate_board: boardPayload()" in js
+    assert "mapping: session.mapping" in js
+    assert "pairs: session.pairs" in js
+    assert "votes: session.votes" in js
+    assert "appliedCandidateId: session.appliedCandidateId" in js
+    assert "preferenceEvidence.disabled = !session.revealed" in js
