@@ -1,271 +1,299 @@
 # MADO Game Audio Loop
 
-MADO Game Audio Loop (MGAL) turns game SFX work from “find something and drop it in” into a reproducible loop:
+MADO Game Audio Loop (MGAL) turns game SFX work from “find something and drop it in” into a reproducible creative loop:
 
-**scan → audition → layer → mix → fork → compare → decide → bundle → replay → recover → reuse**
+**scan → audition → mix → compare → decide → bundle → replay → recover → trace provenance**
 
-## Current milestone: M0.7 Source Recovery / Relink
+## Current milestone: M0.8 Provenance / License Ledger
 
-MGAL can now recover Evidence Replay after source WAV files have been moved or renamed.
+MGAL now tracks not only **what bytes produced a sound**, but also **where those bytes came from**.
 
-The Evidence Bundle remains immutable.
-
-Instead of rewriting old Recipes or source-index paths, MGAL creates an external `relink-map.json` that says:
+Every source WAV can be associated with a content-addressed provenance record:
 
 ```text
-logical evidence path          current physical path
-
-metal.wav                  →   archive/sfx/metal_03.wav
-impact.wav                 →   combat/impact_final.wav
+WAV bytes
+   ↓
+SHA-256
+   ↓
+source_id = sha256:<hash>
+   ↓
+provenance / origin / license / generation / recording metadata
 ```
 
-Recovery uses the original source fingerprints from `source-index.json`.
+The key design rule is:
 
-## Quick start
+> **Path is a hint. SHA-256 is identity.**
+
+That means provenance survives the M0.7 case where files are moved or renamed.
+
+## Create a ledger
+
+Scan a WAV library:
 
 ```bash
-python -m pip install -e ".[dev]"
-pytest
-mgal serve ./audio
+mgal provenance-scan ./audio \
+  --output ./provenance-ledger.json
 ```
 
-A normal evidence flow is:
+Initial entries are deliberately conservative:
+
+```json
+{
+  "source_type": "unknown",
+  "license": {
+    "status": "unknown"
+  }
+}
+```
+
+MGAL does not guess origin or legal rights.
+
+## Fill provenance
+
+### Free-library source
+
+```bash
+mgal provenance-set ./provenance-ledger.json metal.wav \
+  --source-type free_library \
+  --creator "Example Creator" \
+  --title "Metal Hit" \
+  --origin-url "https://example.invalid/sound" \
+  --license-status declared \
+  --license-expression "CC0-1.0" \
+  --license-url "https://example.invalid/license" \
+  --attribution "Example Creator"
+```
+
+### Self-recorded source
+
+```bash
+mgal provenance-set ./provenance-ledger.json cloth.wav \
+  --source-type recorded \
+  --license-status owned \
+  --recorded-by "madowaku" \
+  --recorded-at "2026-10-02" \
+  --device "portable recorder"
+```
+
+### Generated source
+
+```bash
+mgal provenance-set ./provenance-ledger.json generated-impact.wav \
+  --source-type generated \
+  --license-status terms \
+  --license-expression "provider-terms" \
+  --license-url "https://example.invalid/terms" \
+  --provider "ExampleProvider" \
+  --model "ExampleModel" \
+  --prompt "short stylized metallic impact" \
+  --seed "42"
+```
+
+Generation fields are provider-neutral on purpose. Future audio-generation adapters can populate the same ledger contract.
+
+## Validate the ledger
+
+Structure only:
+
+```bash
+mgal validate-ledger ./provenance-ledger.json
+```
+
+Also verify that current files still match their recorded fingerprints:
+
+```bash
+mgal validate-ledger ./provenance-ledger.json \
+  --audio-root ./audio
+```
+
+The report distinguishes structurally valid entries from **complete provenance entries**.
+
+An entry is complete when:
+
+- `source_type` is known
+- license status is known
+- `declared` / `terms` licenses have an expression
+- generated sources include provider, model, and prompt
+- recorded sources include recorded-by
+
+MGAL records these declarations. It does not independently determine whether a license is legally sufficient for a particular use.
+
+## Supported source types
+
+```text
+unknown
+free_library
+recorded
+generated
+procedural
+purchased
+commissioned
+other
+```
+
+## License status vocabulary
+
+```text
+unknown
+declared
+owned
+terms
+```
+
+These are provenance states, not legal opinions.
+
+## Strict Evidence Bundle
+
+A normal bundle remains backward compatible.
+
+To embed provenance for the sources actually referenced by the Candidate Board:
 
 ```bash
 mgal bundle candidates.json \
   --audio-root ./audio \
+  --provenance-ledger ./provenance-ledger.json \
   --output ./evidence/session-001
-
-mgal replay-bundle ./evidence/session-001 \
-  --audio-root ./audio
 ```
 
-If the library is later reorganized and replay fails:
+For release-quality evidence, require complete provenance:
 
 ```bash
-mgal recover-sources ./evidence/session-001 \
-  --search-root ./audio-reorganized \
-  --output ./relinks/session-001.json
+mgal bundle candidates.json \
+  --audio-root ./audio \
+  --provenance-ledger ./provenance-ledger.json \
+  --require-provenance \
+  --output ./evidence/session-001
 ```
 
-Then replay through the recovered map:
+Strict mode rejects the bundle before writing anything if referenced sources have incomplete provenance.
 
-```bash
-mgal replay-bundle ./evidence/session-001 \
-  --audio-root ./audio-reorganized \
-  --relink-map ./relinks/session-001.json
-```
+## Evidence layout
 
-Optionally write a fresh replayed WAV outside the Evidence Bundle:
-
-```bash
-mgal replay-bundle ./evidence/session-001 \
-  --audio-root ./audio-reorganized \
-  --relink-map ./relinks/session-001.json \
-  --output ./replays/session-001.wav
-```
-
-## Recovery behavior
-
-MGAL scans `--search-root` recursively for WAV files.
-
-For each source fingerprint in the Evidence Bundle:
-
-1. try the original relative path first
-2. if it no longer matches, filter candidate WAVs by byte size
-3. SHA-256 only the size-compatible candidates
-4. classify the source as:
-   - `direct`
-   - `relinked`
-   - `ambiguous`
-   - `missing`
-
-A unique SHA-256 match is relinked automatically.
-
-Example result:
-
-```json
-{
-  "relink_map_version": "0.1",
-  "complete": true,
-  "resolved_count": 2,
-  "ambiguous_count": 0,
-  "missing_count": 0,
-  "mappings": [
-    {
-      "source": "metal.wav",
-      "status": "relinked",
-      "target": "archive/sfx/metal_03.wav",
-      "sha256": "...",
-      "bytes": 24812,
-      "matches": ["archive/sfx/metal_03.wav"]
-    }
-  ]
-}
-```
-
-## Ambiguous matches
-
-If two current files have the same expected bytes and SHA-256, MGAL does not guess.
-
-```text
-metal.wav
-  ├── archive/metal.wav
-  └── backup/metal-copy.wav
-
-status = ambiguous
-complete = false
-```
-
-The generated map lists both matches.
-
-The user can remove the duplicate or explicitly edit the external map to one validated target, then mark the mapping resolved.
-
-An incomplete map cannot be used for replay.
-
-## Relink-map safety contract
-
-A relink map is deliberately external to the Evidence Bundle.
-
-MGAL enforces:
-
-- relink map output must be outside the Evidence Bundle
-- relink targets must stay beneath the supplied search/audio root
-- targets must still match stored byte count and SHA-256 when loaded
-- the map's logical source set must match the Candidate Board source set
-- the map contains the SHA-256 of the Evidence Bundle `manifest.json`
-- a map created for another Evidence Bundle is rejected
-
-This keeps:
-
-```text
-Evidence = immutable historical truth
-Relink map = current filesystem address book
-```
-
-## Evidence Replay with relinking
-
-Replay still performs the full M0.6 chain:
-
-```text
-Evidence Bundle
-      ↓
-manifest integrity
-      ↓
-Candidate / Recipe / Decision semantics
-      ↓
-logical source set
-      ↓
-relink-map resolution
-      ↓
-current source SHA-256
-      ↓
-selected Recipe render
-      ↓
-stored output.wav comparison
-      ↓
-BYTE IDENTICAL
-```
-
-The Recipe itself is never rewritten.
-
-## Evidence Bundle layout
+With provenance enabled:
 
 ```text
 evidence/session-001/
 ├── intent.json
 ├── source-index.json
+├── provenance-ledger.json
 ├── candidate-board.json
 ├── candidates/
 ├── selected-recipe.json
 ├── decision.json
 ├── output.wav
 └── manifest.json
-
-relinks/
-└── session-001.json
 ```
 
-The relink file is intentionally not inside `evidence/session-001/`.
+`provenance-ledger.json` contains only entries used by that Evidence Bundle.
+
+Each source in `source-index.json` also receives a stable content identity:
+
+```json
+{
+  "relative_path": "metal.wav",
+  "sha256": "...",
+  "source_id": "sha256:..."
+}
+```
+
+The embedded ledger is matched by `source_id`, not filename.
+
+## Evidence provenance policy
+
+When `--require-provenance` is used, `manifest.json` records:
+
+```json
+{
+  "provenance_required": true
+}
+```
+
+Later `verify-bundle` and `replay-bundle` recompute provenance completeness from the actual entries.
+
+They do not trust a stored `complete: true` flag by itself.
+
+## M0.7 relinking still works
+
+Historical evidence remains immutable:
+
+```text
+Evidence source identity = SHA-256
+Filesystem location      = relink-map.json
+Provenance identity      = same SHA-256
+```
+
+So this remains valid:
+
+```bash
+mgal recover-sources ./evidence/session-001 \
+  --search-root ./audio-reorganized \
+  --output ./relinks/session-001.json
+
+mgal replay-bundle ./evidence/session-001 \
+  --audio-root ./audio-reorganized \
+  --relink-map ./relinks/session-001.json
+```
+
+Moving a file does not change its provenance identity.
 
 ## Useful commands
 
 ```bash
-mgal --help
+mgal provenance-scan ./audio -o provenance-ledger.json
+mgal provenance-set provenance-ledger.json metal.wav --source-type free_library ...
+mgal validate-ledger provenance-ledger.json --audio-root ./audio
+
 mgal scan ./audio
+mgal serve ./audio
 mgal validate recipe.json
 mgal validate-board candidates.json
+
 mgal bundle candidates.json --audio-root ./audio --output ./evidence/session-001
+mgal bundle candidates.json --audio-root ./audio --provenance-ledger provenance-ledger.json --require-provenance --output ./evidence/session-001
+
 mgal verify-bundle ./evidence/session-001
 mgal replay-bundle ./evidence/session-001 --audio-root ./audio
-mgal recover-sources ./evidence/session-001 --search-root ./audio-new
 mgal recover-sources ./evidence/session-001 --search-root ./audio-new --output ./relinks/session-001.json
-mgal replay-bundle ./evidence/session-001 --audio-root ./audio-new --relink-map ./relinks/session-001.json
-mgal render recipe.json --audio-root ./audio --output output.wav
-mgal serve ./audio --no-browser
 ```
 
 ## Persistence layers
 
 ### Recipe
 
-Reproduces the sound:
-
-- source
-- gain
-- offset_ms
-- processing
+Reproduces the sound.
 
 ### Candidate Board
 
-Reproduces the creative comparison:
+Reproduces the comparison and human decision.
 
-- Base Recipe
-- A/B/C Recipes
-- revisions
-- lineage
-- decisions and reasons
+### Provenance Ledger
+
+Explains where source bytes came from and what usage declaration accompanies them.
 
 ### Evidence Bundle
 
-Freezes the historical decision:
-
-- intent
-- source fingerprints
-- Candidate Board
-- selected Recipe
-- decision
-- rendered output
-- payload manifest
+Freezes the selected creative decision, fingerprints, scoped provenance, and rendered output.
 
 ### Relink Map
 
-Resolves historical logical source names to current physical files:
-
-- source
-- target
-- status
-- SHA-256
-- byte size
-- match candidates
-- bound Evidence Bundle manifest hash
+Maps immutable historical source identities to their current filesystem locations.
 
 ## Current constraints
 
-M0.7 stays intentionally compact:
+M0.8 intentionally remains small:
 
 - WAV library only
-- local machine only
-- maximum four mixer layers
-- recovery searches one root per command
-- automatic recovery requires a unique SHA-256 match
-- source audio itself is not copied into the Evidence Bundle
-- renderer currently expects 16-bit mono WAV layers at a shared sample rate
+- provenance metadata is user-declared
+- MGAL does not provide legal advice or independently verify license terms
+- ledger validation against `--audio-root` expects current `path_hint` locations
+- generated-source metadata is provider-neutral
+- source audio itself is not copied into Evidence Bundles
+- renderer still expects 16-bit mono WAV layers at one sample rate
 - no cryptographic signing yet
 - no trimming, EQ, pitch, reverb, or waveform editing yet
 
 ## Design principle
 
-> Shorten the distance between “I imagine this sound” and “I can hear it in the game”.
+> Shorten the distance between “I imagine this sound” and “I can safely reproduce how it was made.”
 
-AI generation remains a future source provider. The creative loop, its evidence, and its replayability remain the product.
+AI generation remains a future Source Provider. Provenance is now ready for it.
