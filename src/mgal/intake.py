@@ -288,20 +288,6 @@ def build_provider_intake(
         _write_json(intake_ledger_path, intake_ledger)
 
         workspace_ledger_path = metadata_root / "provenance-ledger.json"
-        if workspace_ledger_path.is_file():
-            merge_provenance_ledgers(
-                [workspace_ledger_path, intake_ledger_path],
-                workspace_ledger_path,
-            )
-        else:
-            workspace_ledger_path.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-            shutil.copyfile(
-                intake_ledger_path,
-                workspace_ledger_path,
-            )
 
         artifact_root = Path(normalized.artifact_root).resolve()
         candidates = [
@@ -336,6 +322,21 @@ def build_provider_intake(
         }
         _write_json(manifest_path, manifest)
         verify_intake_manifest(audio_root, manifest_path)
+
+        if workspace_ledger_path.is_file():
+            merge_provenance_ledgers(
+                [workspace_ledger_path, intake_ledger_path],
+                workspace_ledger_path,
+            )
+        else:
+            workspace_ledger_path.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            shutil.copyfile(
+                intake_ledger_path,
+                workspace_ledger_path,
+            )
 
         return {
             "ok": True,
