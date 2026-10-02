@@ -17,6 +17,7 @@ from .preference import (
 from .preference_recovery import (
     PreferenceRecoveryError,
     list_portable_preference_archives,
+    recover_preference_sources,
     replay_preference_archive_portable,
     write_preference_relink_map,
 )
@@ -182,14 +183,23 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                 ].strip("/")
                 archive_id = unquote(encoded_id)
                 try:
+                    recovery = recover_preference_sources(
+                        root,
+                        archive_id,
+                        root,
+                    )
                     output = write_preference_relink_map(
                         root,
                         archive_id,
                         root,
                     )
-                    replay = replay_preference_archive_portable(
-                        root,
-                        archive_id,
+                    replay = (
+                        replay_preference_archive_portable(
+                            root,
+                            archive_id,
+                        )
+                        if recovery["complete"]
+                        else None
                     )
                 except (
                     PreferenceEvidenceError,
@@ -204,15 +214,20 @@ def make_handler(audio_root: str | Path) -> type[BaseHTTPRequestHandler]:
                     return
                 self._send_json(
                     {
-                        "ok": True,
+                        "ok": recovery["complete"],
                         "archive_id": archive_id,
                         "relink_map": str(output),
-                        "source_status": replay[
-                            "source_status"
-                        ],
-                        "source_resolution": replay[
-                            "source_resolution"
-                        ],
+                        "recovery": recovery,
+                        "source_status": (
+                            replay["source_status"]
+                            if replay is not None
+                            else "unresolved"
+                        ),
+                        "source_resolution": (
+                            replay["source_resolution"]
+                            if replay is not None
+                            else []
+                        ),
                     }
                 )
                 return
