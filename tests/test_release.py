@@ -1,4 +1,5 @@
 from array import array
+import hashlib
 import json
 from pathlib import Path
 import wave
@@ -240,3 +241,42 @@ def test_release_output_must_stay_outside_evidence_bundle(tmp_path: Path):
             bundle,
             bundle / "release",
         )
+
+
+def _rehash_release_manifest_entry(pack: Path, relative_path: str) -> None:
+    manifest_path = pack / "RELEASE_MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    target = pack / relative_path
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+
+    for item in manifest["files"]:
+        if item["path"] == relative_path:
+            item["sha256"] = digest
+            item["bytes"] = target.stat().st_size
+            break
+    else:
+        raise AssertionError(f"missing release manifest entry: {relative_path}")
+
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_release_verify_detects_semantic_evidence_ref_drift_after_rehash(
+    tmp_path: Path,
+):
+    bundle = _bundle(tmp_path)
+    pack = build_release_pack(bundle, tmp_path / "release")
+
+    ref_path = pack / "EVIDENCE_REF.json"
+    ref = json.loads(ref_path.read_text(encoding="utf-8"))
+    ref["selected_candidate_id"] = "different-candidate"
+    ref_path.write_text(
+        json.dumps(ref, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _rehash_release_manifest_entry(pack, "EVIDENCE_REF.json")
+
+    with pytest.raises(ReleasePackError, match="candidate does not match"):
+        verify_release_pack(pack)
