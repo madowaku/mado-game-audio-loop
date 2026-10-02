@@ -69,6 +69,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reject bundling unless every referenced source has complete provenance",
     )
+    bundle.add_argument(
+        "--preference-evidence",
+        help="Optional Preference Session Evidence JSON to include in the bundle",
+    )
 
     verify_bundle = sub.add_parser(
         "verify-bundle",
@@ -359,6 +363,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output,
             provenance_ledger_path=args.provenance_ledger,
             require_provenance=args.require_provenance,
+            preference_evidence_path=args.preference_evidence,
         )
         print(output)
         return 0
