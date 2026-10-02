@@ -1107,6 +1107,124 @@ verify-bundle success
 - CI uses no network and spends no provider credits
 - Browser JavaScript checks remain green
 
+### MGAL-M1.2 Provider Audio Normalizer
+
+Goal:
+
+**Normalize heterogeneous Provider WAV artifacts into one deterministic renderer-safe format while preserving original content identity and provenance lineage.**
+
+Canonical profile:
+
+```text
+profile_id = mgal-pcm16-mono-44100-v1
+WAV
+PCM signed 16-bit
+mono
+44,100 Hz
+```
+
+Pipeline:
+
+```text
+raw ProviderResult
+      ↓
+validate original artifact/hash/provenance
+      ↓
+Provider Audio Normalizer
+      ↓
+canonical WAV
+      ↓
+normalized ProviderResult
+      ↓
+Layer Mixer / Recipe / Evidence
+```
+
+Original Provider artifacts are never overwritten.
+
+CLI:
+
+```bash
+mgal provider-normalize provider-result.json \
+  --output-root ./audio/canonical \
+  --output normalized-provider-result.json \
+  --provenance-output normalized-provenance.json
+```
+
+Provider Result JSON can be loaded back into the typed Source Provider Contract and is revalidated against its artifact root before normalization.
+
+Transformation behavior:
+
+- canonical input uses byte-preserving copy
+- multi-channel PCM is averaged to mono
+- integer PCM 8/16/24/32-bit is converted to signed PCM16
+- non-44.1kHz PCM is deterministically linearly resampled to 44.1kHz
+- compressed WAV is rejected
+
+Normalized provenance becomes content-addressed to the normalized bytes and retains:
+
+```text
+normalization.profile_id
+normalization.passthrough
+normalization.algorithm
+normalization.original.candidate_id
+normalization.original.source_id
+normalization.original.sha256
+normalization.original.bytes
+normalization.original.relative_path
+normalization.original audio format
+normalization.normalized.source_id
+normalization.normalized.sha256
+normalization.normalized.bytes
+normalization.normalized audio format
+```
+
+The top-level provenance `source_id` and `sha256` always identify the normalized artifact.
+
+M0.8 provenance validation verifies normalization lineage and ensures the normalized lineage identity matches the top-level entry.
+
+M0.9 `PROVENANCE_REPORT.json` carries normalization metadata into release artifacts.
+
+Determinism:
+
+The same raw Provider artifact and normalization profile must produce the same normalized SHA-256.
+
+Mixed-format integration proof:
+
+```text
+8k mono local
++
+48k stereo generated
+      ↓
+normalize each
+      ↓
+44.1k mono PCM16
+      ↓
+one mixed Recipe
+      ↓
+strict Evidence Bundle
+      ↓
+deterministic 44.1k mono output.wav
+```
+
+#### M1.2 acceptance
+
+- persisted Provider Result JSON can be loaded and revalidated
+- canonical normalization profile is explicit and versioned
+- stereo/multi-channel PCM can normalize to mono
+- 8/16/24/32-bit integer PCM decode path exists
+- non-44.1k audio deterministically resamples to 44.1k
+- already canonical audio preserves bytes
+- Provider originals are not modified
+- normalized Provider Result passes Source Provider Contract validation
+- normalized provenance is a standard valid Ledger entry
+- original and normalized hashes are both retained
+- broken normalization lineage is rejected
+- normalized provenance reaches Release provenance reports
+- mixed local/generated incompatible formats render through strict Evidence
+- CLI emits normalized Result JSON and Provenance Ledger
+- CI uses no network and spends no provider credits
+- Browser JavaScript checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
