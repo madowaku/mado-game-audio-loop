@@ -322,3 +322,44 @@ def test_decision_memory_records_observations_not_automatic_rules(
     assert "winner_candidate_id" in raw
     assert "loser_candidate_id" in raw
     assert "observed_differences" in raw
+
+
+def test_decision_memory_accumulates_multiple_explicit_promotions(
+    tmp_path: Path,
+):
+    audio_root = _archive(
+        tmp_path,
+        archive_id="memory-one",
+    )
+
+    second_board = _board()
+    second_board["intent"] = "heavy sword impact"
+    second_evidence = compile_preference_evidence(
+        _preference(second_board),
+        audio_root,
+    )
+    archive_preference_evidence(
+        second_evidence,
+        audio_root,
+        archive_id="memory-two",
+    )
+
+    promote_preference_archive(
+        audio_root,
+        "memory-one",
+    )
+    promote_preference_archive(
+        audio_root,
+        "memory-two",
+    )
+
+    view = decision_memory_view(audio_root)
+    assert view["summary"]["promotion_count"] == 2
+    assert view["summary"]["entry_count"] == 6
+    assert {
+        item["intent"]
+        for item in view["summary"]["intent_counts"]
+    } == {
+        "crisp sword impact",
+        "heavy sword impact",
+    }
