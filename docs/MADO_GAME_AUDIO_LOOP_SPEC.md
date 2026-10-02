@@ -2484,6 +2484,245 @@ Decision Memory is evidence available to future workflows, not authority over fu
 - no automatic recommendation or selection field is introduced
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M2.1 Decision Memory Retrieval / Context Pack
+
+Goal:
+
+**Retrieve a deterministic, reference-only subset of explicitly promoted Decision Memory for the creator's current intent without introducing Candidate recommendation or automatic selection.**
+
+#### Context Pack schema
+
+```text
+decision_context_pack_version = 0.1
+context_pack_id
+retrieval_strategy
+decision_memory_sha256
+query
+memory_snapshot
+matched_entry_count
+returned_entry_count
+truncated
+observations[]
+usage
+```
+
+Required usage boundary:
+
+```text
+role = reference_only
+selection_effect = none
+```
+
+#### Retrieval strategy
+
+Strategy ID:
+
+```text
+intent-token-overlap-v1
+```
+
+Intent normalization:
+
+- Unicode NFKC
+- case folding
+- whitespace normalization
+
+Terms:
+
+- Unicode word tokens length >= 2
+- small English stop-word exclusion
+- contiguous CJK runs
+- CJK 2-grams
+
+Each Decision Memory entry inherits the source Preference Archive intent.
+
+A retrieval match exists when:
+
+- normalized intents are exactly equal, or
+- at least one query term overlaps the source-intent terms
+
+No zero-match fallback is permitted.
+
+#### Deterministic ordering
+
+Matches sort by:
+
+1. exact intent descending
+2. matched term count descending
+3. source intent ascending
+4. archive ID ascending
+5. pair index ascending
+6. entry ID ascending
+
+`limit` must be between 1 and 50.
+
+Matched-entry count reflects all matches before limit.
+
+Returned-entry count reflects the sliced observations.
+
+`truncated` must equal `matched_entry_count > returned_entry_count`.
+
+#### Observation contract
+
+Each returned observation contains:
+
+```text
+entry_id
+archive_id
+archive_evidence_sha256
+source_intent
+match
+pair_index
+winner_candidate_id
+loser_candidate_id
+winner_recipe
+loser_recipe
+observed_differences
+```
+
+Match metadata:
+
+```text
+exact_intent
+matched_terms
+match_count
+query_term_count
+source_term_count
+```
+
+These values describe retrieval relevance only and are not preference or Candidate-quality scores.
+
+#### Snapshot binding
+
+The complete validated Decision Memory is canonically serialized and SHA-256 hashed.
+
+The pack records:
+
+```text
+decision_memory_sha256
+```
+
+A saved Context Pack is fresh only while current Decision Memory has the same fingerprint.
+
+The Context Pack receives:
+
+```text
+context:<20-char canonical payload SHA-256 prefix>
+```
+
+Validation recomputes the ID.
+
+#### CLI
+
+```bash
+mgal decision-context "<intent>" \
+  --audio-root ./audio \
+  [--limit 6] \
+  [--output context.json]
+
+mgal decision-context-verify context.json \
+  --audio-root ./audio
+```
+
+Verification:
+
+1. validates Context Pack structure
+2. validates query normalization and tokenization
+3. validates match metadata
+4. validates usage boundary
+5. rejects automatic-selection fields
+6. recomputes Context Pack ID
+7. compares Decision Memory SHA-256
+8. rebuilds deterministic retrieval and requires exact equality
+
+#### Server API
+
+```text
+GET /api/decision-context?intent=<intent>&limit=<n>
+```
+
+Invalid intent or limit returns a JSON error.
+
+#### Browser UI
+
+Intent controls expose explicit:
+
+```text
+Load memory context
+Download context pack
+```
+
+Context is not loaded automatically during typing.
+
+The panel displays:
+
+- returned/matched counts
+- retrieval strategy
+- winner/loser observation
+- source archive intent
+- exact or matched terms
+- deterministic observed Recipe deltas
+
+The panel has no Candidate mutation action.
+
+#### Intent staleness
+
+Browser stores the loaded Context Pack in transient state.
+
+When Intent changes after retrieval:
+
+- current pack is marked stale
+- stale warning is shown
+- Context Pack download is disabled
+- Browser does not automatically replace the pack
+
+Reload is explicit.
+
+#### Authority defense
+
+Context Pack validation rejects keys:
+
+```text
+recommended_candidate
+auto_select
+preference_score
+candidate_ranking
+```
+
+Browser additionally rejects server responses unless:
+
+```text
+usage.role == reference_only
+usage.selection_effect == none
+```
+
+#### M2.1 acceptance
+
+- Decision Memory can be queried by current intent
+- retrieval is deterministic
+- exact intent is preferred
+- term overlap retrieval is supported
+- CJK intents have deterministic 2-gram overlap support
+- unrelated zero-match queries return no observations
+- limit/truncated counts are internally consistent
+- Context Pack includes pairwise observations and Recipe summaries
+- retrieval metadata is not stored as a preference-quality score
+- Context Pack is bound to the full Decision Memory fingerprint
+- Context Pack gets deterministic content-derived identity
+- a saved pack verifies while Decision Memory is unchanged
+- a saved pack becomes stale when Decision Memory changes
+- CLI can retrieve/write/verify Context Packs
+- server exposes read-only Decision Context retrieval
+- Browser retrieval is explicit
+- Browser shows matched terms and observed differences
+- Intent editing marks loaded Context stale
+- stale Context download is disabled
+- Context UI contains no Candidate mutation controls
+- automatic selection/recommendation fields are rejected
+- Browser enforces reference-only usage metadata
+- existing M2.0 Decision Memory remains unchanged
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
