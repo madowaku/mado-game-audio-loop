@@ -8,6 +8,7 @@ from typing import Any
 from .variation_brief import (
     VariationBriefError,
     load_variation_brief,
+    validate_planned_change,
     validate_variation_brief,
     variation_brief_root,
 )
@@ -341,6 +342,18 @@ def validate_candidate_plan(
     ):
         raise CandidatePlanError(
             "Candidate Plan experiment planned_change must be an object"
+        )
+    try:
+        normalized_change = validate_planned_change(
+            planned_change
+        )
+    except VariationBriefError as exc:
+        raise CandidatePlanError(
+            f"Candidate Plan planned_change is invalid: {exc}"
+        ) from exc
+    if normalized_change != planned_change:
+        raise CandidatePlanError(
+            "Candidate Plan planned_change is not normalized"
         )
 
     preserve = experiment.get(
