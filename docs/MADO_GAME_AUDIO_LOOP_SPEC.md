@@ -2128,6 +2128,131 @@ It is an observational replay surface.
 - existing M1.7 standalone Preference Evidence validation remains supported
 - Python tests and Browser JavaScript syntax checks remain green
 
+### MGAL-M1.9 Preference Source Recovery / Portable Archive
+
+Goal:
+
+**Recover archived Preference sources by exact byte fingerprint after files move or are renamed, without mutating historical Preference Evidence or Candidate Recipes.**
+
+Historical source identity remains:
+
+```text
+relative_path
+sha256
+bytes
+```
+
+Archive metadata validation is separated from current source availability. A valid archive may therefore be recoverable even when its historical source paths no longer exist.
+
+#### Preference Relink Map 0.1
+
+```text
+preference_relink_version
+archive_id
+archive_evidence_sha256
+candidate_board_sha256
+search_root = "."
+source_count
+resolved_count
+ambiguous_count
+missing_count
+complete
+mappings[]
+```
+
+Each mapping contains `source`, `status`, `target`, `sha256`, `bytes`, and `matches`.
+
+Resolution algorithm:
+
+1. prefer the historical relative path when byte size and SHA-256 still match
+2. otherwise recursively scan WAV files under search root
+3. group by byte size before hashing
+4. one hash match → `relinked`
+5. multiple hash matches → `ambiguous`
+6. no hash match → `missing`
+
+Ambiguous matches are never guessed.
+
+Default Relink Map location:
+
+```text
+audio/.mgal/preference-relinks/<archive-id>.json
+```
+
+Relink Maps live outside immutable Preference Archive directories.
+
+Map loading requires exact archive ID, Evidence fingerprint, Candidate Board fingerprint, and source set equality. Every target must remain beneath search root and retain expected byte size and SHA-256.
+
+#### Portable replay
+
+```bash
+mgal preference-recover <archive-id> \
+  --audio-root ./workspace \
+  --search-root ./current-library
+
+mgal preference-replay-archive <archive-id> \
+  --audio-root ./workspace \
+  [--search-root ./current-library] \
+  [--relink-map relink.json]
+```
+
+`--audio-root` identifies the workspace containing `.mgal/preferences`. `--search-root` identifies the current source library and may be elsewhere.
+
+Replay tries direct historical paths first. If they fail, a validated Preference Relink Map can supply source overrides.
+
+Archived Recipes are never rewritten. Returned replay-plan Recipes are remapped in memory to resolved current paths while gain, offset, processing, mapping, pair order, and votes remain unchanged.
+
+Replay reports:
+
+```text
+source_status = direct | relinked
+relink_map
+source_resolution[]
+```
+
+#### Portable archive list
+
+Archive listing distinguishes:
+
+```text
+ok=true,  source_status=direct
+ok=true,  source_status=relinked
+ok=false, recoverable=true, source_status=unresolved
+ok=false, recoverable=false  # archive metadata/evidence corruption
+```
+
+#### Browser recovery
+
+```text
+POST /api/preferences/<archive-id>/recover
+```
+
+The Browser searches the served audio root, stores the default Relink Map, refreshes the audio catalog and archive list, and enables Replay only after complete unique recovery.
+
+Incomplete recovery reports ambiguous and missing counts and leaves the archive recoverable.
+
+#### M1.9 acceptance
+
+- archive metadata remains verifiable when historical source paths disappear
+- historical direct path is preferred when still valid
+- same-size filtering occurs before SHA-256 hashing
+- unique fingerprint match relinks
+- duplicate fingerprint matches are ambiguous
+- absent fingerprint match is missing
+- incomplete recovery never guesses
+- Relink Map is bound to archive, Evidence, and Candidate Board fingerprints
+- Relink Map source set exactly matches archived source index
+- relink target drift is rejected
+- replay supports a source root different from archive workspace root
+- replay remaps Recipe sources only in memory
+- recovered replay preserves gain and offset
+- archive list exposes direct/relinked/recoverable state
+- CLI supports recovery and portable replay
+- Browser exposes Recover sources
+- Browser Replay reports SHA-256 relink status
+- existing Preference Evidence and Archive formats remain immutable and compatible
+- Python tests and Browser JavaScript syntax checks remain green
+
 ## Next provider adapters
 
 \`\`\`text
