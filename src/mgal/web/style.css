@@ -814,6 +814,58 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   line-height: 1.45;
 }
 
+.variation-brief-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #454132;
+  border-radius: 10px;
+  background: #1b1915;
+}
+
+.variation-brief-head h3 {
+  margin: 2px 0 0;
+  font-size: .86rem;
+}
+
+.variation-brief-panel label {
+  display: grid;
+  gap: 4px;
+  color: #94988d;
+  font-size: .7rem;
+}
+
+.variation-brief-panel textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.variation-change-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.variation-brief-list {
+  display: grid;
+  gap: 6px;
+}
+
+.variation-brief-card {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid #383329;
+  border-radius: 8px;
+  background: #211e19;
+}
+
+.variation-brief-card > span {
+  color: #8e8a80;
+  font-size: .68rem;
+  line-height: 1.4;
+}
+
 .candidate-board { display: grid; gap: 10px; margin: 12px 0; }
 
 .candidate-card {
@@ -910,5 +962,6 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   .candidate-card-head { align-items: stretch; flex-direction: column; }
   .audition-position { width: 100%; margin-left: 0; }
   .preference-pair { flex-direction: column; }
+  .variation-change-grid { grid-template-columns: 1fr 1fr; }
   .preference-versus { align-self: center; }
 }
