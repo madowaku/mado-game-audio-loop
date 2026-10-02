@@ -6,6 +6,10 @@ from pathlib import Path
 
 from .audio import scan_audio
 from .candidate import load_candidate_board
+from .context_pack import (
+    build_decision_context_pack,
+    verify_decision_context_pack_against_memory,
+)
 from .decision_memory import (
     decision_memory_view,
     promote_preference_archive,
@@ -223,6 +227,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify Decision Memory against promoted Preference Archives",
     )
     decision_memory_verify.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    decision_context = sub.add_parser(
+        "decision-context",
+        help="Retrieve reference-only Decision Memory context for an intent",
+    )
+    decision_context.add_argument("intent")
+    decision_context.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    decision_context.add_argument(
+        "--limit",
+        type=int,
+        default=6,
+    )
+    decision_context.add_argument(
+        "--output",
+        "-o",
+        help="Optional Context Pack JSON output path",
+    )
+
+    decision_context_verify = sub.add_parser(
+        "decision-context-verify",
+        help="Verify a Decision Context Pack against current Decision Memory",
+    )
+    decision_context_verify.add_argument("context_pack")
+    decision_context_verify.add_argument(
         "--audio-root",
         required=True,
     )
@@ -625,6 +659,49 @@ def main(argv: list[str] | None = None) -> int:
         print(
             json.dumps(
                 verify_decision_memory_against_archives(
+                    args.audio_root,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "decision-context":
+        pack = build_decision_context_pack(
+            args.audio_root,
+            args.intent,
+            limit=args.limit,
+        )
+        if args.output:
+            output = Path(args.output).resolve()
+            output.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            output.write_text(
+                json.dumps(
+                    pack,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        print(
+            json.dumps(
+                pack,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "decision-context-verify":
+        print(
+            json.dumps(
+                verify_decision_context_pack_against_memory(
+                    args.context_pack,
                     args.audio_root,
                 ),
                 ensure_ascii=False,
