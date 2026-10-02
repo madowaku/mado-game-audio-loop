@@ -73,6 +73,9 @@ def test_candidate_board_static_contract():
         "variation-preserve",
         "save-variation-brief",
         "variation-brief-list",
+        "refresh-candidate-plans",
+        "candidate-plan-empty",
+        "candidate-plan-list",
     ):
         assert f'id="{element_id}"' in html
 
@@ -169,6 +172,15 @@ def test_candidate_board_static_contract():
         "/api/variation-briefs",
         "human_explicit",
         "candidate_generation",
+        "compileCandidatePlan",
+        "refreshCandidatePlans",
+        "renderCandidatePlans",
+        "formatPlanChange",
+        "/api/candidate-plans",
+        "Compile plan",
+        "Plan ready",
+        "manual_required",
+        "recipe_materialization",
     ):
         assert token in js
 
@@ -521,3 +533,35 @@ def test_variation_brief_human_authorship_ui_contract():
     assert ".variation-brief-panel" in css
     assert ".variation-change-grid" in css
     assert ".variation-brief-card" in css
+
+
+def test_candidate_plan_non_materialized_ui_contract():
+    html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    js = (WEB_ROOT / "app.js").read_text(encoding="utf-8")
+    css = (WEB_ROOT / "style.css").read_text(encoding="utf-8")
+
+    assert "CANDIDATE PLAN" in html
+    assert "Control / Hypothesis / Contrast" in html
+    assert "Plans describe experiments only." in html
+    assert "do not contain materialized Recipes or select Candidates" in html
+
+    assert '"Compile plan"' in js
+    assert '"Plan ready"' in js
+    assert '"Plan needs C input"' in js
+    assert '"/api/candidate-plans"' in js
+    assert "variation_brief_id" in js
+    assert 'result.plan.authority.recipe_materialization !== "none"' in js
+    assert 'result.plan.authority.candidate_generation !== "none"' in js
+    assert 'result.plan.authority.candidate_selection !== "none"' in js
+
+    start = js.index("async function compileCandidatePlan")
+    end = js.index("async function refreshVariationBriefs", start)
+    plan_code = js[start:end]
+    assert "recipePayload()" not in plan_code
+    assert "setCandidateDecision" not in plan_code
+    assert "applyPreferenceWinner" not in plan_code
+
+    assert ".candidate-plan-shelf" in css
+    assert ".candidate-plan-card" in css
+    assert ".candidate-plan-variant" in css
+    assert ".manual-required" in css
