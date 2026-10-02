@@ -102,3 +102,16 @@ def test_server_exposes_preference_archive_replay_contract():
     assert "replay_preference_archive_portable" in source
     assert "write_preference_relink_map" in source
     assert 'parsed.path.endswith("/recover")' in source
+
+
+def test_server_exposes_explicit_decision_memory_contract():
+    from mgal import server as server_module
+
+    source = Path(server_module.__file__).read_text(encoding="utf-8")
+    assert 'parsed.path == "/api/decision-memory"' in source
+    assert 'parsed.path.endswith("/promote")' in source
+    assert "promote_preference_archive" in source
+    assert "decision_memory_view" in source
+    assert "promoted_hashes" in source
+    assert 'entry["promotable"]' in source
+    assert 'entry["promoted"]' in source
