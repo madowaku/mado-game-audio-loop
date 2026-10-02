@@ -77,3 +77,13 @@ def test_build_catalog_enriches_provider_intake_metadata(tmp_path: Path):
     assert row["intake"]["source_type"] == "generated"
     assert row["intake"]["prompt"] == "short metallic impact"
     assert row["intake"]["normalization_profile_id"] == "mgal-pcm16-mono-44100-v1"
+
+
+def test_server_exposes_preference_evidence_post_contract():
+    from mgal import server
+
+    source = Path(server.__file__).read_text(encoding="utf-8")
+    assert 'def do_POST(self)' in source
+    assert '"/api/preference-evidence"' in source
+    assert "compile_preference_evidence" in source
+    assert "2_000_000" in source
