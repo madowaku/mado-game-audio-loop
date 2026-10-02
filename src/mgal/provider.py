@@ -73,6 +73,7 @@ class ProviderResult:
     source_provider_contract_version: str
     provider_id: str
     provider_kind: str
+    artifact_root: str
     request: SourceRequest
     candidates: tuple[SourceCandidate, ...]
 
@@ -180,6 +181,14 @@ def validate_provider_result(result: ProviderResult) -> None:
     if not result.provider_id.strip():
         raise SourceProviderError("provider_id must not be empty")
 
+    artifact_root = Path(result.artifact_root)
+    if not artifact_root.is_absolute():
+        raise SourceProviderError("artifact_root must be an absolute path")
+    if not artifact_root.is_dir():
+        raise SourceProviderError(
+            f"artifact_root does not exist: {artifact_root}"
+        )
+
     result.request.validate()
     if len(result.candidates) > result.request.count:
         raise SourceProviderError("provider returned more candidates than requested")
@@ -217,6 +226,26 @@ def validate_provider_result(result: ProviderResult) -> None:
                 f"{candidate.candidate_id}: channels must be positive"
             )
 
+        candidate_path = (artifact_root / candidate.relative_path).resolve()
+        try:
+            candidate_path.relative_to(artifact_root.resolve())
+        except ValueError as exc:
+            raise SourceProviderError(
+                f"{candidate.candidate_id}: relative_path escapes artifact_root"
+            ) from exc
+        if not candidate_path.is_file():
+            raise SourceProviderError(
+                f"{candidate.candidate_id}: candidate artifact is missing"
+            )
+        if candidate_path.stat().st_size != candidate.bytes:
+            raise SourceProviderError(
+                f"{candidate.candidate_id}: candidate byte size changed"
+            )
+        if source_sha256(candidate_path) != candidate.sha256:
+            raise SourceProviderError(
+                f"{candidate.candidate_id}: candidate hash changed"
+            )
+
         provenance = candidate.provenance
         if not isinstance(provenance, dict):
             raise SourceProviderError(
@@ -238,6 +267,7 @@ def provider_result_to_dict(result: ProviderResult) -> dict[str, Any]:
         "source_provider_contract_version": result.source_provider_contract_version,
         "provider_id": result.provider_id,
         "provider_kind": result.provider_kind,
+        "artifact_root": result.artifact_root,
         "request": asdict(result.request),
         "candidate_count": len(result.candidates),
         "candidates": [asdict(candidate) for candidate in result.candidates],
@@ -356,6 +386,7 @@ class LocalFileProvider:
             source_provider_contract_version=SOURCE_PROVIDER_CONTRACT_VERSION,
             provider_id=self.provider_id,
             provider_kind=self.provider_kind,
+            artifact_root=str(self.audio_root),
             request=request,
             candidates=tuple(candidates),
         )
@@ -482,6 +513,7 @@ class FixtureGeneratedProvider:
             source_provider_contract_version=SOURCE_PROVIDER_CONTRACT_VERSION,
             provider_id=self.provider_id,
             provider_kind=self.provider_kind,
+            artifact_root=str(self.output_root),
             request=request,
             candidates=tuple(candidates),
         )
