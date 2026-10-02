@@ -540,7 +540,8 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
 .preference-archive-head,
 .preference-archive-card,
 .preference-replay-head,
-.preference-replay-nav {
+.preference-replay-nav,
+.decision-memory-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -621,6 +622,61 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
 
 .preference-replay-nav {
   justify-content: center;
+}
+
+.preference-archive-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.memory-promotion-action:disabled {
+  opacity: .72;
+}
+
+.decision-memory {
+  display: grid;
+  gap: 9px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #37402f;
+  border-radius: 12px;
+  background: #151915;
+}
+
+.decision-memory-head {
+  justify-content: space-between;
+}
+
+.decision-memory-head h3 {
+  margin: 2px 0 0;
+  font-size: .9rem;
+}
+
+.decision-memory-list {
+  display: grid;
+  gap: 7px;
+}
+
+.decision-memory-row {
+  display: grid;
+  gap: 3px;
+  padding: 9px;
+  border: 1px solid #2d3328;
+  border-radius: 9px;
+  background: #1a1e18;
+}
+
+.decision-memory-row > span {
+  color: #838a7d;
+  font-size: .7rem;
+  line-height: 1.4;
+}
+
+.decision-memory-delta {
+  color: #b8c69f !important;
 }
 
 .candidate-board { display: grid; gap: 10px; margin: 12px 0; }
