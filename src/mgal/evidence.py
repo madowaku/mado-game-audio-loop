@@ -165,26 +165,14 @@ def build_evidence_bundle(
 
     board = load_candidate_board(board_path)
     selected = _selected_candidate(board)
-
-    if output_dir.exists() and not output_dir.is_dir():
-        raise EvidenceBundleError(f"output path is not a directory: {output_dir}")
-    if output_dir.exists() and any(output_dir.iterdir()):
-        raise EvidenceBundleError(f"output directory is not empty: {output_dir}")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    candidates_dir = output_dir / "candidates"
-    candidates_dir.mkdir(parents=True, exist_ok=True)
-
-    _write_json(output_dir / "intent.json", {"intent": board.intent})
     source_index = _source_index(board, audio_root)
-    _write_json(output_dir / "source-index.json", source_index)
-    _write_json(output_dir / "candidate-board.json", _board_to_dict(board))
 
     if require_provenance and provenance_ledger_path is None:
         raise EvidenceBundleError(
             "require_provenance needs a provenance ledger"
         )
 
+    provenance_subset: dict[str, Any] | None = None
     if provenance_ledger_path is not None:
         try:
             provenance_subset = subset_ledger_for_source_index(
@@ -200,6 +188,21 @@ def build_evidence_bundle(
             raise EvidenceBundleError(
                 "referenced sources do not have complete provenance/license metadata"
             )
+
+    if output_dir.exists() and not output_dir.is_dir():
+        raise EvidenceBundleError(f"output path is not a directory: {output_dir}")
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise EvidenceBundleError(f"output directory is not empty: {output_dir}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    candidates_dir = output_dir / "candidates"
+    candidates_dir.mkdir(parents=True, exist_ok=True)
+
+    _write_json(output_dir / "intent.json", {"intent": board.intent})
+    _write_json(output_dir / "source-index.json", source_index)
+    _write_json(output_dir / "candidate-board.json", _board_to_dict(board))
+
+    if provenance_subset is not None:
         _write_json(
             output_dir / "provenance-ledger.json",
             provenance_subset,
