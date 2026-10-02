@@ -61,6 +61,12 @@ from .providers.stability import StabilityAudioProvider
 from .recipe import load_recipe
 from .recovery import recover_sources, write_relink_map
 from .release import build_release_pack, verify_release_pack
+from .recipe_materializer import (
+    list_materialized_recipe_sets,
+    load_materialized_recipe_set,
+    materialize_candidate_plan,
+    verify_materialized_recipe_set,
+)
 from .render import render_recipe
 from .replay import replay_evidence_bundle
 from .server import serve
@@ -363,6 +369,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate a Candidate Plan",
     )
     candidate_plan_validate.add_argument("plan")
+
+    plan_materialize = sub.add_parser(
+        "candidate-plan-materialize",
+        help="Materialize a ready Candidate Plan into A/B/C Recipe variations",
+    )
+    plan_materialize.add_argument("plan")
+    plan_materialize.add_argument("recipe")
+    plan_materialize.add_argument(
+        "--audio-root",
+        required=True,
+    )
+    plan_materialize.add_argument(
+        "--output",
+        "-o",
+        help="Optional copy of the Materialized Recipe Set JSON",
+    )
+
+    materialized_list = sub.add_parser(
+        "materialized-recipe-list",
+        help="List saved Materialized Recipe Sets",
+    )
+    materialized_list.add_argument(
+        "--audio-root",
+        required=True,
+    )
+
+    materialized_verify = sub.add_parser(
+        "materialized-recipe-verify",
+        help="Verify a Materialized Recipe Set against current source bytes",
+    )
+    materialized_verify.add_argument("recipe_set")
+    materialized_verify.add_argument(
+        "--audio-root",
+        required=True,
+    )
 
     provenance_scan = sub.add_parser(
         "provenance-scan",
@@ -981,6 +1022,72 @@ def main(argv: list[str] | None = None) -> int:
                     load_candidate_plan(
                         args.plan
                     )
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "candidate-plan-materialize":
+        plan = load_candidate_plan(
+            args.plan
+        )
+        recipe_data = json.loads(
+            Path(args.recipe).read_text(
+                encoding="utf-8"
+            )
+        )
+        result = materialize_candidate_plan(
+            args.audio_root,
+            plan,
+            recipe_data,
+        )
+        if args.output:
+            output = Path(args.output).resolve()
+            output.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+            output.write_text(
+                json.dumps(
+                    result["recipe_set"],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "materialized-recipe-list":
+        print(
+            json.dumps(
+                list_materialized_recipe_sets(
+                    args.audio_root
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "materialized-recipe-verify":
+        recipe_set = load_materialized_recipe_set(
+            args.recipe_set
+        )
+        print(
+            json.dumps(
+                verify_materialized_recipe_set(
+                    recipe_set,
+                    args.audio_root,
                 ),
                 ensure_ascii=False,
                 indent=2,
