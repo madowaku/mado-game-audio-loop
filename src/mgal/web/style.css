@@ -896,6 +896,33 @@ h2 { margin-bottom: 0; font-size: 1.1rem; }
   gap: 7px;
 }
 
+.materialized-recipe-shelf {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #373329;
+}
+
+.materialized-recipe-list {
+  display: grid;
+  gap: 7px;
+}
+
+.materialized-recipe-card {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border: 1px solid #3b3930;
+  border-radius: 9px;
+  background: #1e201b;
+}
+
+.materialized-recipe-card > span {
+  color: #8d9086;
+  font-size: .68rem;
+  line-height: 1.4;
+}
+
 .candidate-plan-card {
   display: grid;
   gap: 5px;
