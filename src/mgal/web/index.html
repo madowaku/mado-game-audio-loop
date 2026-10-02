@@ -70,6 +70,23 @@
         <p id="decision-context-stale" class="decision-context-stale" hidden>Intent changed. Reload context before using this pack.</p>
         <p id="decision-context-empty" class="hint" hidden>No promoted Decision Memory observation matches this intent.</p>
         <div id="decision-context-list" class="decision-context-list"></div>
+        <div class="delta-inspector-controls">
+          <button id="inspect-current-deltas" class="secondary compact" type="button" disabled>Inspect current deltas</button>
+          <button id="download-delta-inspector" class="secondary compact" type="button" disabled>Download delta inspector</button>
+        </div>
+        <section id="delta-inspector-panel" class="delta-inspector-panel" hidden>
+          <div class="delta-inspector-head">
+            <div>
+              <p class="eyebrow">CURRENT RECIPE · OBSERVATION ONLY</p>
+              <h3>Current vs past winner / loser</h3>
+            </div>
+            <span id="delta-inspector-count" class="count">0</span>
+          </div>
+          <p id="delta-inspector-summary" class="preference-message"></p>
+          <p id="delta-inspector-stale" class="decision-context-stale" hidden>Current Recipe or Context changed. Inspect again before using these deltas.</p>
+          <div id="delta-inspector-list" class="delta-inspector-list"></div>
+          <p class="hint">Deltas are current minus reference. No closeness score, ranking, or automatic Recipe change is computed.</p>
+        </section>
         <p class="hint">Context is reference-only. It does not rank, copy, select, or apply any Candidate.</p>
       </section>
 
