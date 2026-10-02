@@ -2,178 +2,190 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**provide → normalize → audition → mix → compare → decide → bundle → replay → provenance → release**
+**provide → intake → audition → mix → compare → decide → evidence → replay → release**
 
-## Current milestone: M1.2 Provider Audio Normalizer
+## Current milestone: M1.3 Provider Intake / Audition Bridge
 
-MGAL now normalizes Provider audio into one deterministic internal WAV profile before mixing and Evidence rendering.
+M1.3 connects Provider output to the Browser Audition Board.
 
-The core rule is:
+The core flow is now:
 
-> **Keep the provider original. Mix the canonical derivative. Preserve the lineage between both.**
+```text
+Provider Result
+    ↓
+provider-intake
+    ↓
+canonical normalization
+    ↓
+workspace registration
+    ↓
+workspace provenance merge
+    ↓
+Audition Board live catalog
+```
+
+The Browser Board can stay open while Provider candidates arrive.
+
+## Workspace layout
+
+An MGAL audio workspace now has two layers:
+
+```text
+audio/
+├── incoming/
+│   └── <intake-id>/
+│       ├── candidate-01.wav
+│       └── candidate-02.wav
+└── .mgal/
+    ├── provenance-ledger.json
+    └── intakes/
+        └── <intake-id>/
+            ├── manifest.json
+            ├── provider-result.json
+            └── provenance-ledger.json
+```
+
+The visible WAV tree stays simple.
+
+The hidden `.mgal` layer stores intake history and workspace provenance.
+
+## Intake a saved Provider Result
+
+```bash
+mgal provider-intake ./provider-runs/heavy-slash.json \
+  --audio-root ./audio \
+  --intake-id heavy-slash-001
+```
+
+The command:
+
+1. reloads and validates the saved Provider Result
+2. normalizes every candidate to the M1.2 canonical profile
+3. writes canonical WAVs below `audio/incoming/<intake-id>/`
+4. writes an intake-scoped Provider Result
+5. writes an intake-scoped Provenance Ledger
+6. merges provenance into `audio/.mgal/provenance-ledger.json`
+7. writes and verifies the intake manifest
 
 Canonical profile:
 
 ```text
-profile_id   = mgal-pcm16-mono-44100-v1
-sample rate  = 44,100 Hz
-channels     = mono
-sample width = 16-bit PCM
-container    = WAV
+mgal-pcm16-mono-44100-v1
+44.1 kHz
+mono
+16-bit PCM WAV
 ```
 
-This matches the current deterministic renderer contract and removes sample-rate/channel differences between Provider sources.
+## Intake identity
 
-## Why M1.2 exists
-
-A generated Provider may return stereo 44.1/48 kHz audio while older local assets may be mono 8/22/44.1 kHz.
-
-Before M1.2:
+If `--intake-id` is omitted, MGAL derives one from:
 
 ```text
-local 8k mono
+request id
 +
-generated 48k stereo
-        ↓
-renderer mismatch
+provider id
++
+Provider Result SHA-256 prefix
 ```
 
-After M1.2:
+The same Provider Result with the same intake ID is idempotent.
 
-```text
-local Provider Result
-        ↓
-Provider Audio Normalizer
-        ↓
-44.1k mono PCM16
-
-generated Provider Result
-        ↓
-Provider Audio Normalizer
-        ↓
-44.1k mono PCM16
-
-        ↓
-same Layer Mixer / Recipe / Evidence renderer
-```
-
-## Normalize a saved Provider Result
-
-Provider Result JSON is now reloadable.
-
-```bash
-mgal provider-normalize ./provider-runs/heavy-slash.json \
-  --output-root ./audio/canonical/heavy-slash \
-  --output ./provider-runs/heavy-slash-normalized.json \
-  --provenance-output ./provider-runs/heavy-slash-normalized-provenance.json
-```
-
-The original Provider artifacts are not modified.
-
-The normalized Provider Result points to the new canonical artifact root.
-
-## Normalization behavior
-
-### Already canonical
-
-A 44.1kHz, mono, 16-bit PCM WAV uses a byte-preserving copy.
-
-```text
-original SHA-256 == normalized SHA-256
-passthrough = true
-algorithm = byte-preserving-copy
-```
-
-### Non-canonical PCM WAV
-
-MGAL currently:
-
-1. decodes PCM WAV samples
-2. averages channels to mono
-3. converts sample depth to signed 16-bit
-4. linearly resamples to 44.1kHz
-5. writes deterministic PCM16 mono WAV
-
-```text
-algorithm = channel-average+linear-resample+pcm16
-```
-
-Supported PCM sample widths are currently 8, 16, 24, and 32-bit integer WAV.
-
-Compressed WAV is rejected.
-
-## Original and normalized identities
-
-The normalized artifact becomes the active source identity used by Recipes and Evidence.
-
-Its provenance carries a normalization lineage:
+A repeated intake verifies existing artifacts and returns:
 
 ```json
 {
-  "source_id": "sha256:<normalized>",
-  "sha256": "<normalized>",
-  "normalization": {
-    "profile_id": "mgal-pcm16-mono-44100-v1",
-    "passthrough": false,
-    "original": {
-      "source_id": "sha256:<original>",
-      "sha256": "<original>",
-      "bytes": 12345,
-      "relative_path": "provider-original.wav"
-    },
-    "normalized": {
-      "source_id": "sha256:<normalized>",
-      "sha256": "<normalized>",
-      "bytes": 6789,
-      "sample_rate": 44100,
-      "channels": 1,
-      "sample_width": 2
-    }
-  }
+  "reused": true
 }
 ```
 
-So downstream Evidence can answer both:
+The same intake ID cannot silently point to a different Provider Result.
 
-- which exact canonical bytes were mixed
-- which exact Provider bytes those canonical bytes came from
+## Intake manifest
 
-## Provenance validation
-
-M0.8 provenance validation now understands normalization lineage.
-
-It checks:
-
-- normalization profile ID
-- passthrough flag
-- algorithm
-- original source ID ↔ original SHA-256
-- normalized source ID ↔ normalized SHA-256
-- normalized identity ↔ top-level provenance identity
-
-A broken lineage is rejected even if the top-level source hash is otherwise valid.
-
-## Release lineage
-
-`PROVENANCE_REPORT.json` now includes the normalization object.
-
-A final Release Pack therefore retains:
+Each intake session records:
 
 ```text
-Release WAV
-   ↓
-canonical source SHA-256
-   ↓
-normalization lineage
-   ↓
-original Provider SHA-256
-   ↓
-provider generation / recording / origin metadata
+intake_version
+intake_id
+provider_result_sha256
+provider_id
+provider_kind
+request
+normalization_profile_id
+normalized_provider_result_sha256
+candidate_count
+candidates[]
 ```
 
-## Stable Audio workflow
+Each candidate records:
 
-A practical generated-audio loop is now:
+- workspace-relative WAV path
+- normalized source ID
+- normalized SHA-256
+- byte size
+- source type
+- generation metadata
+- normalization lineage
+
+The manifest is verified against the current WAV bytes before the workspace Ledger is updated.
+
+## Workspace provenance
+
+Every accepted candidate gets a workspace-relative provenance path.
+
+Example:
+
+```text
+incoming/heavy-slash-001/01-impact-....wav
+```
+
+The central workspace Ledger is:
+
+```text
+audio/.mgal/provenance-ledger.json
+```
+
+It can later be used directly for strict Evidence creation.
+
+Conflicting complete provenance for the same content-addressed source remains an error.
+
+## Audition Board bridge
+
+Run the Browser Board once:
+
+```bash
+mgal serve ./audio
+```
+
+Then intake new Provider Runs in another terminal.
+
+The browser polls `/api/audio` every 2.5 seconds.
+
+When the catalog changes, only the source list is refreshed.
+
+New intake cards display:
+
+- source type
+- Provider ID
+- intake ID
+- generation Provider
+- generation model
+- prompt / intent
+- normal audio metadata
+
+Provider/intake/prompt text is searchable from the existing Find a sound box.
+
+There is also a manual:
+
+```text
+↻ Refresh sources
+```
+
+button.
+
+## Generated-audio path
+
+A practical Stable Audio flow is now:
 
 ```bash
 mgal source-provide \
@@ -183,108 +195,122 @@ mgal source-provide \
   --request-id heavy-slash \
   --intent "short stylized metallic sword slash" \
   --count 1 \
-  --output ./provider-runs/heavy-slash.json \
-  --provenance-output ./provider-runs/heavy-slash-raw-provenance.json
+  --output ./provider-runs/heavy-slash.json
 
-mgal provider-normalize ./provider-runs/heavy-slash.json \
-  --output-root ./audio/canonical/generated/heavy-slash \
-  --output ./provider-runs/heavy-slash-normalized.json \
-  --provenance-output ./provider-runs/heavy-slash-normalized-provenance.json
+mgal provider-intake ./provider-runs/heavy-slash.json \
+  --audio-root ./audio \
+  --intake-id heavy-slash-001
 
 mgal serve ./audio
 ```
 
-Generating and normalizing are deliberately separate operations.
+If `mgal serve ./audio` is already running, the final command is unnecessary.
 
-That means a paid Provider call can be reused and re-normalized without spending additional generation credits.
+The new sound appears automatically.
 
-## Mixed local + generated workflow
+## Why acquisition and intake remain separate
 
-Local assets can go through the same boundary.
+M1.3 does not combine paid generation and workspace registration into one irreversible command.
+
+Instead:
+
+```text
+paid acquisition
+      ↓
+saved Provider Result
+      ↓
+free repeatable intake
+```
+
+This means a paid Provider Run can be re-intaken, re-normalized, or moved into another MGAL workspace without buying the audio again.
+
+## Browser catalog metadata
+
+The server enriches intake WAV rows with:
+
+```text
+intake_id
+provider_id
+provider_kind
+request_id
+intent
+source_type
+source_id
+generation_provider
+generation_model
+prompt
+normalization_profile_id
+original_source_id
+```
+
+Ordinary local WAVs continue to work without intake metadata.
+
+## Existing creative loop remains unchanged
+
+Once a source is visible in the Board:
+
+```text
+Audition
+  ↓
+Add layer
+  ↓
+Live Mix
+  ↓
+A/B/C Candidate Board
+  ↓
+Human Select
+  ↓
+Evidence Bundle
+  ↓
+Replay / Relink
+  ↓
+Release Pack
+```
+
+Provider metadata informs the choice but never makes the choice.
+
+## Useful commands
 
 ```bash
+mgal provider-describe --provider stability
+
 mgal source-provide \
-  --provider local \
-  --audio-root ./raw-local \
-  --provenance-ledger ./local-provenance.json \
-  --request-id metal \
-  --intent "metal" \
+  --provider stability \
+  --artifact-root ./provider-raw/stability/run-001 \
+  --allow-paid \
+  --request-id impact \
+  --intent "short metallic impact" \
   --count 1 \
-  --output ./provider-runs/metal.json
+  --output ./provider-runs/impact.json
 
-mgal provider-normalize ./provider-runs/metal.json \
-  --output-root ./audio/canonical/local \
-  --output ./provider-runs/metal-normalized.json \
-  --provenance-output ./provider-runs/metal-normalized-provenance.json
+mgal provider-intake ./provider-runs/impact.json \
+  --audio-root ./audio \
+  --intake-id impact-001
 
-mgal provenance-merge \
-  ./provider-runs/metal-normalized-provenance.json \
-  ./provider-runs/heavy-slash-normalized-provenance.json \
-  --output ./combined-provenance.json
-```
+mgal serve ./audio
 
-Now both sources share one renderer-safe format.
+mgal bundle candidate-board.json \
+  --audio-root ./audio \
+  --provenance-ledger ./audio/.mgal/provenance-ledger.json \
+  --require-provenance \
+  --output ./evidence/session-001
 
-## Determinism
-
-Normalization is deterministic for the same Provider artifact and profile.
-
-CI verifies that repeated normalization produces the same normalized SHA-256.
-
-Provider originals are also re-hashed before normalization through Source Provider Contract validation.
-
-## Integration proof
-
-CI includes an end-to-end fixture with intentionally incompatible inputs:
-
-```text
-local source:      8kHz mono PCM16
-generated source: 48kHz stereo PCM16
-         ↓
-normalize both
-         ↓
-44.1kHz mono PCM16
-         ↓
-mixed selected Recipe
-         ↓
-strict Evidence Bundle
-         ↓
-output.wav = 44.1kHz mono PCM16
-```
-
-No network or paid generation is used in CI.
-
-## Provider foundation remains stable
-
-Source Provider Contract stays at version 1.0.
-
-M1.2 is a transformation layer after acquisition, not a Provider-specific exception.
-
-```text
-Provider
-   ↓
-ProviderResult raw
-   ↓
-Normalizer
-   ↓
-ProviderResult canonical
-   ↓
-MGAL creative loop
+mgal replay-bundle ./evidence/session-001 --audio-root ./audio
+mgal release-pack ./evidence/session-001 --output ./release/final
 ```
 
 ## Current constraints
 
-- canonical profile is fixed at 44.1kHz mono PCM16
-- PCM WAV input only
-- no FLAC/OGG/MP3 decode yet
-- channel conversion is arithmetic averaging
-- resampling uses deterministic linear interpolation, not studio-grade SRC
-- no loudness normalization yet
-- raw Provider artifacts are not embedded into Evidence, but their hashes remain in lineage
-- normalizer outputs are separate files and do not overwrite originals
+- intake accepts saved MGAL Provider Result JSON
+- canonical audio profile remains fixed at 44.1kHz mono PCM16
+- workspace catalog refresh uses lightweight polling, not WebSocket/SSE
+- intake metadata is local JSON, not a database
+- no Provider generation button inside the browser yet
+- no automatic Candidate Board seeding from an intake session yet
+- no archive/prune UI for old intake sessions yet
 
 ## Design principle
 
-> Provider bytes are historical evidence. Canonical bytes are creative working material.
+> Providers deliver possibilities. Intake makes them available. Humans decide what becomes the sound.
 
-M1.2 lets MGAL mix heterogeneous sources while preserving exactly where every normalized sound came from.
+M1.3 closes the gap between generated/acquired audio and the place where the creator can actually listen to it.
