@@ -5,6 +5,7 @@ import wave
 
 import pytest
 
+from mgal.cli import main
 from mgal.context_pack import (
     build_decision_context_pack,
 )
@@ -17,6 +18,7 @@ from mgal.delta_inspector import (
     recipe_delta,
     summarize_current_recipe,
     validate_delta_inspector_pack,
+    verify_delta_inspector_pack_against_current,
 )
 from mgal.preference import (
     archive_preference_evidence,
@@ -523,3 +525,159 @@ def test_inspector_rejects_evaluation_fields(
         validate_delta_inspector_pack(
             inspector
         )
+
+
+def test_delta_inspector_pack_verifies_against_current_state(
+    tmp_path: Path,
+):
+    audio_root, context = _fixture(
+        tmp_path
+    )
+    current = _recipe(
+        "current",
+        "d.wav",
+        0.7,
+        15,
+    )
+    inspector = build_delta_inspector_pack(
+        audio_root,
+        context,
+        current,
+    )
+    path = tmp_path / "inspector.json"
+    path.write_text(
+        json.dumps(inspector),
+        encoding="utf-8",
+    )
+
+    report = verify_delta_inspector_pack_against_current(
+        path,
+        audio_root,
+    )
+
+    assert report["ok"] is True
+    assert report["fresh"] is True
+    assert report["inspections"] == 3
+
+
+def test_delta_inspector_pack_detects_current_source_drift(
+    tmp_path: Path,
+):
+    audio_root, context = _fixture(
+        tmp_path
+    )
+    inspector = build_delta_inspector_pack(
+        audio_root,
+        context,
+        _recipe(
+            "current",
+            "d.wav",
+            0.7,
+            15,
+        ),
+    )
+    path = tmp_path / "inspector.json"
+    path.write_text(
+        json.dumps(inspector),
+        encoding="utf-8",
+    )
+
+    _write_wav(
+        audio_root / "d.wav",
+        999,
+    )
+
+    with pytest.raises(
+        DeltaInspectorError,
+        match="does not match current Recipe and Context",
+    ):
+        verify_delta_inspector_pack_against_current(
+            path,
+            audio_root,
+        )
+
+
+def test_delta_inspector_cli_build_and_verify(
+    tmp_path: Path,
+    capsys,
+):
+    audio_root, context = _fixture(
+        tmp_path
+    )
+    context_path = tmp_path / "context.json"
+    context_path.write_text(
+        json.dumps(context),
+        encoding="utf-8",
+    )
+    recipe_path = tmp_path / "current.json"
+    recipe_path.write_text(
+        json.dumps(
+            _recipe(
+                "current",
+                "d.wav",
+                0.7,
+                15,
+            )
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "inspector.json"
+
+    assert main(
+        [
+            "decision-context-inspect",
+            str(context_path),
+            str(recipe_path),
+            "--audio-root",
+            str(audio_root),
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    built = json.loads(
+        capsys.readouterr().out
+    )
+    assert built["inspection_count"] == 3
+    assert output.is_file()
+
+    assert main(
+        [
+            "decision-context-inspect-verify",
+            str(output),
+            "--audio-root",
+            str(audio_root),
+        ]
+    ) == 0
+    verified = json.loads(
+        capsys.readouterr().out
+    )
+    assert verified["fresh"] is True
+
+
+def test_delta_inspector_contains_no_closeness_or_action_fields(
+    tmp_path: Path,
+):
+    audio_root, context = _fixture(
+        tmp_path
+    )
+    inspector = build_delta_inspector_pack(
+        audio_root,
+        context,
+        _recipe(
+            "current",
+            "d.wav",
+            0.7,
+            15,
+        ),
+    )
+    raw = json.dumps(inspector)
+
+    for token in (
+        "similarity_score",
+        "closer_to",
+        "recommended_candidate",
+        "auto_select",
+        "candidate_ranking",
+        "apply_winner",
+    ):
+        assert token not in raw
