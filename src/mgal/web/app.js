@@ -14,6 +14,7 @@ const state = {
   sequenceIndex: -1,
   sequenceTimer: null,
   playbackToken: 0,
+  preferenceSession: null,
 };
 
 const list = document.querySelector("#audio-list");
@@ -42,6 +43,22 @@ const sequenceCandidatesButton = document.querySelector("#sequence-candidates");
 const previousCandidateButton = document.querySelector("#previous-candidate");
 const nextCandidateButton = document.querySelector("#next-candidate");
 const auditionPosition = document.querySelector("#audition-position");
+const preferenceSessionButton = document.querySelector("#preference-session");
+const preferencePanel = document.querySelector("#preference-panel");
+const preferenceTitle = document.querySelector("#preference-title");
+const preferenceProgress = document.querySelector("#preference-progress");
+const preferenceMessage = document.querySelector("#preference-message");
+const preferencePair = document.querySelector("#preference-pair");
+const preferenceLeftLabel = document.querySelector("#preference-left-label");
+const preferenceRightLabel = document.querySelector("#preference-right-label");
+const preferenceLeftPlay = document.querySelector("#preference-left-play");
+const preferenceRightPlay = document.querySelector("#preference-right-play");
+const preferenceLeftVote = document.querySelector("#preference-left-vote");
+const preferenceRightVote = document.querySelector("#preference-right-vote");
+const preferenceReveal = document.querySelector("#preference-reveal");
+const preferenceRevealButton = document.querySelector("#preference-reveal-button");
+const preferenceApply = document.querySelector("#preference-apply");
+const preferenceClose = document.querySelector("#preference-close");
 
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const audioContext = new AudioContextClass();
@@ -63,6 +80,52 @@ function selectedCandidate() {
   return state.candidates.find(function (candidate) {
     return candidate.id === state.activeCandidateId;
   }) || null;
+}
+
+function randomUint32() {
+  const values = new Uint32Array(1);
+  window.crypto.getRandomValues(values);
+  return values[0];
+}
+
+function shuffleCopy(items) {
+  const copy = items.slice();
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomUint32() % (index + 1);
+    const temporary = copy[index];
+    copy[index] = copy[swapIndex];
+    copy[swapIndex] = temporary;
+  }
+  return copy;
+}
+
+function candidateById(candidateId) {
+  return state.candidates.find(function (candidate) {
+    return candidate.id === candidateId;
+  }) || null;
+}
+
+function preferenceAlias(candidateId) {
+  const session = state.preferenceSession;
+  if (!session || session.revealed) return null;
+  const entry = session.mapping.find(function (item) {
+    return item.candidateId === candidateId;
+  });
+  return entry ? entry.alias : null;
+}
+
+function displayCandidateLabel(candidate) {
+  return preferenceAlias(candidate.id) || candidate.label;
+}
+
+function candidatesForDisplay() {
+  const session = state.preferenceSession;
+  if (!session || session.revealed) return state.candidates;
+  return session.mapping
+    .map(function (entry) {
+      return candidateById(entry.candidateId);
+    })
+    .filter(Boolean);
 }
 
 function setSelected(layers) {
@@ -140,6 +203,7 @@ function updateAuditionControls() {
 
   blindModeButton.disabled = !hasCandidates;
   sequenceCandidatesButton.disabled = !hasCandidates;
+  preferenceSessionButton.disabled = state.candidates.length < 2;
   previousCandidateButton.disabled = !hasCandidates || activeIndex <= 0;
   nextCandidateButton.disabled =
     !hasCandidates ||
@@ -152,8 +216,16 @@ function updateAuditionControls() {
     ? "■ Stop sequence"
     : "▶ A→B→C";
   sequenceCandidatesButton.classList.toggle("active", state.sequenceRunning);
+  preferenceSessionButton.classList.toggle(
+    "active",
+    Boolean(state.preferenceSession)
+  );
 
   document.body.classList.toggle("blind-mode", state.blindMode);
+  document.body.classList.toggle(
+    "preference-mode",
+    Boolean(state.preferenceSession && !state.preferenceSession.revealed)
+  );
 
   if (!hasCandidates) {
     auditionPosition.textContent = "No candidates";
@@ -922,6 +994,258 @@ function startSequentialAudition() {
   playSequentialCandidate(0);
 }
 
+function preferencePairs(mapping) {
+  const pairs = [];
+  for (let left = 0; left < mapping.length; left += 1) {
+    for (let right = left + 1; right < mapping.length; right += 1) {
+      const pair = [mapping[left], mapping[right]];
+      if (randomUint32() % 2 === 1) pair.reverse();
+      pairs.push(pair);
+    }
+  }
+  return shuffleCopy(pairs);
+}
+
+function preferenceScores(session) {
+  const scores = new Map();
+  session.mapping.forEach(function (entry) {
+    scores.set(entry.candidateId, 0);
+  });
+  session.votes.forEach(function (vote) {
+    scores.set(
+      vote.winnerCandidateId,
+      (scores.get(vote.winnerCandidateId) || 0) + 1
+    );
+  });
+  return scores;
+}
+
+function preferenceWinner(session) {
+  if (session.votes.length !== session.pairs.length) return null;
+  const scores = preferenceScores(session);
+  let best = -1;
+  let leaders = [];
+  scores.forEach(function (score, candidateId) {
+    if (score > best) {
+      best = score;
+      leaders = [candidateId];
+    } else if (score === best) {
+      leaders.push(candidateId);
+    }
+  });
+  return leaders.length === 1 ? leaders[0] : null;
+}
+
+function closePreferenceSession() {
+  stopAll();
+  state.preferenceSession = null;
+  preferencePanel.hidden = true;
+  state.blindMode = false;
+  updateAuditionControls();
+  renderCandidates();
+  status.textContent = "Preference session closed";
+}
+
+function startPreferenceSession() {
+  if (state.candidates.length < 2) return;
+  stopAll();
+
+  const aliases = ["X", "Y", "Z"];
+  const shuffled = shuffleCopy(state.candidates.slice(0, 3));
+  const mapping = shuffled.map(function (candidate, index) {
+    return {
+      alias: aliases[index],
+      candidateId: candidate.id,
+    };
+  });
+
+  state.preferenceSession = {
+    mapping: mapping,
+    pairs: preferencePairs(mapping),
+    pairIndex: 0,
+    votes: [],
+    revealed: false,
+    applied: false,
+  };
+  state.blindMode = true;
+  preferencePanel.hidden = false;
+  updateAuditionControls();
+  renderCandidates();
+  renderPreferenceSession();
+  status.textContent = "Randomized blind preference session started";
+}
+
+function currentPreferencePair() {
+  const session = state.preferenceSession;
+  if (!session) return null;
+  return session.pairs[session.pairIndex] || null;
+}
+
+function playPreferenceSide(sideIndex) {
+  const pair = currentPreferencePair();
+  if (!pair) return;
+  const entry = pair[sideIndex];
+  const candidate = candidateById(entry.candidateId);
+  if (!candidate) return;
+
+  state.activeCandidateId = candidate.id;
+  state.selected = candidate.layers;
+  renderRecipe();
+  renderCandidates();
+  previewCandidate(candidate);
+}
+
+function votePreferenceSide(sideIndex) {
+  const session = state.preferenceSession;
+  const pair = currentPreferencePair();
+  if (!session || !pair || session.revealed) return;
+
+  const winner = pair[sideIndex];
+  const loser = pair[sideIndex === 0 ? 1 : 0];
+  session.votes.push({
+    leftAlias: pair[0].alias,
+    rightAlias: pair[1].alias,
+    winnerAlias: winner.alias,
+    winnerCandidateId: winner.candidateId,
+    loserCandidateId: loser.candidateId,
+  });
+  session.pairIndex += 1;
+  stopAll();
+  renderPreferenceSession();
+}
+
+function revealPreferenceSession() {
+  const session = state.preferenceSession;
+  if (!session) return;
+  if (session.votes.length !== session.pairs.length) return;
+
+  session.revealed = true;
+  state.blindMode = false;
+  updateAuditionControls();
+  renderCandidates();
+  renderPreferenceSession();
+  status.textContent = "Preference identities revealed";
+}
+
+function applyPreferenceWinner() {
+  const session = state.preferenceSession;
+  if (!session || !session.revealed) return;
+
+  const winnerId = preferenceWinner(session);
+  if (!winnerId) return;
+
+  state.candidates.forEach(function (candidate) {
+    if (candidate.decision === "selected") {
+      candidate.decision = "undecided";
+    }
+  });
+
+  const winner = candidateById(winnerId);
+  if (!winner) return;
+  winner.decision = "selected";
+  session.applied = true;
+  state.activeCandidateId = winner.id;
+  state.selected = winner.layers;
+
+  renderRecipe();
+  renderCandidates();
+  renderPreferenceSession();
+  status.textContent =
+    "Preference winner applied · Candidate " + winner.label;
+}
+
+function renderPreferenceSession() {
+  const session = state.preferenceSession;
+  if (!session) {
+    preferencePanel.hidden = true;
+    return;
+  }
+
+  preferencePanel.hidden = false;
+  const complete = session.votes.length === session.pairs.length;
+  preferenceProgress.textContent =
+    String(session.votes.length) + " / " + String(session.pairs.length);
+
+  if (!complete) {
+    const pair = currentPreferencePair();
+    preferencePair.hidden = false;
+    preferenceReveal.hidden = true;
+    preferenceRevealButton.disabled = true;
+    preferenceApply.disabled = true;
+    preferenceTitle.textContent = "Which sound do you prefer?";
+    preferenceMessage.textContent =
+      "Pair " +
+      String(session.pairIndex + 1) +
+      " of " +
+      String(session.pairs.length) +
+      " · identity remains hidden";
+
+    preferenceLeftLabel.textContent = pair[0].alias;
+    preferenceRightLabel.textContent = pair[1].alias;
+    preferenceLeftPlay.textContent = "▶ Play " + pair[0].alias;
+    preferenceRightPlay.textContent = "▶ Play " + pair[1].alias;
+    preferenceLeftVote.textContent = "Prefer " + pair[0].alias;
+    preferenceRightVote.textContent = "Prefer " + pair[1].alias;
+    return;
+  }
+
+  preferencePair.hidden = true;
+  preferenceRevealButton.disabled = session.revealed;
+  preferenceTitle.textContent = session.revealed
+    ? "Preference reveal"
+    : "Voting complete";
+  preferenceMessage.textContent = session.revealed
+    ? "Random aliases are now mapped back to Candidates."
+    : "All pairwise votes are complete. Reveal when ready.";
+
+  if (!session.revealed) {
+    preferenceReveal.hidden = true;
+    preferenceApply.disabled = true;
+    return;
+  }
+
+  const scores = preferenceScores(session);
+  const winnerId = preferenceWinner(session);
+  preferenceReveal.hidden = false;
+  preferenceReveal.replaceChildren();
+
+  session.mapping.forEach(function (entry) {
+    const candidate = candidateById(entry.candidateId);
+    const row = document.createElement("div");
+    row.className = "preference-reveal-row";
+
+    const identity = document.createElement("strong");
+    identity.textContent =
+      entry.alias +
+      " = " +
+      (candidate ? "Candidate " + candidate.label : "missing Candidate");
+
+    const score = document.createElement("span");
+    const wins = scores.get(entry.candidateId) || 0;
+    score.textContent =
+      String(wins) + " win" + (wins === 1 ? "" : "s");
+
+    row.append(identity, score);
+    preferenceReveal.appendChild(row);
+  });
+
+  const verdict = document.createElement("p");
+  verdict.className = "preference-verdict";
+  if (winnerId) {
+    const winner = candidateById(winnerId);
+    verdict.textContent =
+      "Session winner: Candidate " +
+      (winner ? winner.label : "?") +
+      " · Apply winner is explicit.";
+  } else {
+    verdict.textContent =
+      "Tie: no Candidate decision will be applied automatically.";
+  }
+  preferenceReveal.appendChild(verdict);
+
+  preferenceApply.disabled = !winnerId || session.applied;
+}
+
 function copyActiveInto(targetId) {
   const source = selectedCandidate();
   const target = state.candidates.find(function (candidate) {
@@ -1011,12 +1335,15 @@ function renderCandidateCard(candidate) {
 
   const label = document.createElement("span");
   label.className = "candidate-label";
-  label.textContent = candidate.label;
+  label.textContent = displayCandidateLabel(candidate);
 
   const titleMeta = document.createElement("div");
   const badge = document.createElement("span");
   badge.className = "candidate-badge";
-  badge.textContent = candidate.decision;
+  badge.textContent =
+    state.preferenceSession && !state.preferenceSession.revealed
+      ? "blind"
+      : candidate.decision;
   const lineage = document.createElement("div");
   lineage.className = "candidate-meta blind-sensitive";
   lineage.textContent =
@@ -1034,6 +1361,9 @@ function renderCandidateCard(candidate) {
   edit.className = "candidate-action";
   edit.textContent = candidate.id === state.activeCandidateId ? "Editing" : "Edit";
   edit.disabled = candidate.id === state.activeCandidateId;
+  edit.hidden = Boolean(
+    state.preferenceSession && !state.preferenceSession.revealed
+  );
   edit.addEventListener("click", function () {
     loadCandidate(candidate.id);
   });
@@ -1079,6 +1409,9 @@ function renderCandidateCard(candidate) {
   copy.className = "candidate-action";
   copy.textContent = "Copy active → " + candidate.label;
   copy.disabled = !state.activeCandidateId || state.activeCandidateId === candidate.id;
+  copy.hidden = Boolean(
+    state.preferenceSession && !state.preferenceSession.revealed
+  );
   copy.addEventListener("click", function () {
     copyActiveInto(candidate.id);
   });
@@ -1101,6 +1434,11 @@ function renderCandidateCard(candidate) {
     candidate.reason = reason.value;
   });
 
+  if (state.preferenceSession && !state.preferenceSession.revealed) {
+    decisions.hidden = true;
+    reason.hidden = true;
+  }
+
   card.append(head, delta, sourceSummary, actions, decisions, reason);
   return card;
 }
@@ -1114,13 +1452,15 @@ function renderCandidates() {
     clearBoardButton.disabled = true;
     cancelSequentialAudition();
     state.blindMode = false;
+    state.preferenceSession = null;
+    preferencePanel.hidden = true;
     updateAuditionControls();
     renderIntakeSessions();
     return;
   }
 
   candidateHelp.hidden = true;
-  state.candidates.forEach(function (candidate) {
+  candidatesForDisplay().forEach(function (candidate) {
     candidateBoard.appendChild(renderCandidateCard(candidate));
   });
   downloadBoardButton.disabled = false;
@@ -1188,10 +1528,34 @@ previousCandidateButton.addEventListener("click", function () {
 nextCandidateButton.addEventListener("click", function () {
   moveCandidate(1, true);
 });
+preferenceSessionButton.addEventListener("click", function () {
+  if (state.preferenceSession) {
+    closePreferenceSession();
+  } else {
+    startPreferenceSession();
+  }
+});
+preferenceLeftPlay.addEventListener("click", function () {
+  playPreferenceSide(0);
+});
+preferenceRightPlay.addEventListener("click", function () {
+  playPreferenceSide(1);
+});
+preferenceLeftVote.addEventListener("click", function () {
+  votePreferenceSide(0);
+});
+preferenceRightVote.addEventListener("click", function () {
+  votePreferenceSide(1);
+});
+preferenceRevealButton.addEventListener("click", revealPreferenceSession);
+preferenceApply.addEventListener("click", applyPreferenceWinner);
+preferenceClose.addEventListener("click", closePreferenceSession);
 
 clearBoardButton.addEventListener("click", function () {
   stopAll();
   state.blindMode = false;
+  state.preferenceSession = null;
+  preferencePanel.hidden = true;
   state.candidates = [];
   state.activeCandidateId = null;
   state.boardBaseRecipe = null;
@@ -1215,6 +1579,46 @@ document.addEventListener("keydown", function (event) {
 
   const key = event.key.toLowerCase();
   const active = selectedCandidate();
+  const preference = state.preferenceSession;
+
+  if (preference && !preference.revealed) {
+    if (event.key === "1") {
+      event.preventDefault();
+      playPreferenceSide(0);
+      return;
+    }
+    if (event.key === "2") {
+      event.preventDefault();
+      playPreferenceSide(1);
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      votePreferenceSide(0);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      votePreferenceSide(1);
+      return;
+    }
+    if (key === "r") {
+      event.preventDefault();
+      revealPreferenceSession();
+      return;
+    }
+    if (key === "p") {
+      event.preventDefault();
+      closePreferenceSession();
+      return;
+    }
+    if (event.key === "Escape") {
+      stopAll();
+      status.textContent = "Preference audio stopped";
+      return;
+    }
+    return;
+  }
 
   if (event.key === " ") {
     event.preventDefault();
@@ -1249,6 +1653,16 @@ document.addEventListener("keydown", function (event) {
   if (key === "q") {
     event.preventDefault();
     startSequentialAudition();
+    return;
+  }
+
+  if (key === "p") {
+    event.preventDefault();
+    if (state.preferenceSession) {
+      closePreferenceSession();
+    } else {
+      startPreferenceSession();
+    }
     return;
   }
 
