@@ -9,6 +9,7 @@ from urllib.parse import quote, unquote, urlparse
 import webbrowser
 
 from .audio import read_wav_metadata
+from .intake import load_intake_catalog
 
 
 WEB_ROOT = Path(__file__).with_name("web")
@@ -19,24 +20,29 @@ def build_catalog(audio_root: str | Path) -> list[dict[str, object]]:
     if not root.is_dir():
         raise NotADirectoryError(root)
 
+    intake_catalog = load_intake_catalog(root)
+
     catalog: list[dict[str, object]] = []
     for path in sorted(root.rglob("*.wav")):
         if not path.is_file():
             continue
         metadata = read_wav_metadata(path)
         relative = path.relative_to(root).as_posix()
-        catalog.append(
-            {
-                "name": path.name,
-                "relative_path": relative,
-                "duration_ms": metadata.duration_ms,
-                "sample_rate": metadata.sample_rate,
-                "channels": metadata.channels,
-                "sample_width": metadata.sample_width,
-                "frames": metadata.frames,
-                "url": "/audio/" + quote(relative, safe="/"),
-            }
-        )
+        row: dict[str, object] = {
+            "name": path.name,
+            "relative_path": relative,
+            "duration_ms": metadata.duration_ms,
+            "sample_rate": metadata.sample_rate,
+            "channels": metadata.channels,
+            "sample_width": metadata.sample_width,
+            "frames": metadata.frames,
+            "bytes": path.stat().st_size,
+            "url": "/audio/" + quote(relative, safe="/"),
+        }
+        intake = intake_catalog.get(relative)
+        if intake is not None:
+            row["intake"] = intake
+        catalog.append(row)
     return catalog
 
 
