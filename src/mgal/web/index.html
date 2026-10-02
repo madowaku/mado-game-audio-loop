@@ -22,6 +22,7 @@
           <span>Find a sound</span>
           <input id="filter" type="search" placeholder="metal, whoosh, hit…" autocomplete="off">
         </label>
+        <button id="refresh-sources" class="secondary" type="button">↻ Refresh sources</button>
         <button id="stop-all" class="secondary" type="button">Stop all</button>
       </div>
       <div id="empty" class="empty" hidden>No WAV files found in this audio root.</div>
@@ -79,6 +80,14 @@
           <span class="file-path"></span>
         </div>
         <span class="duration"></span>
+      </div>
+      <div class="source-context" hidden>
+        <div class="source-badges">
+          <span class="source-type-badge"></span>
+          <span class="provider-badge"></span>
+          <span class="intake-badge"></span>
+        </div>
+        <p class="source-prompt"></p>
       </div>
       <canvas class="waveform" width="720" height="88" aria-label="Audio waveform"></canvas>
       <div class="card-actions">
