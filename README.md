@@ -2,339 +2,437 @@
 
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
-**listen → remember → inspect → hypothesize → plan → materialize later**
+**listen → remember → inspect → hypothesize → plan → materialize → audition next**
 
-## Current milestone: M2.4 Variation Brief → Candidate Plan Compiler
+## Current milestone: M2.5 Candidate Plan → Recipe Variation Materializer
 
-M2.4 converts a human-authored M2.3 Variation Brief into a deterministic experiment plan.
-
-It still does **not** generate or mutate Recipes.
+M2.5 is the first M2.x milestone that creates real Recipe JSON from a human-authored experiment chain.
 
 The flow is:
 
 ```text
-Variation Brief
-      ↓
-Candidate Plan
+M2.3 Variation Brief
+        ↓
+M2.4 Candidate Plan
+        ↓
+M2.5 Materialized Recipe Set
 
-A = Control
-B = Hypothesis
-C = Contrast
+A = Control Recipe
+B = Hypothesis Recipe
+C = Contrast Recipe
 ```
 
-The plan answers:
+The generated Recipes are saved for inspection only.
 
-> Which three experimental roles should we prepare next?
+M2.5 does **not** mutate Candidate Board state, select a Candidate, or run a preference session.
 
-It does not yet answer:
+## Materialized Recipe Set 0.1
 
-> What exact Recipe JSON should each role use?
-
-That is intentionally reserved for a later materialization milestone.
-
-## Candidate Plan 0.1
-
-Top-level fields:
+A set contains:
 
 ```text
-candidate_plan_version = 0.1
-plan_id
-variation_brief_id
-basis
+materialized_recipe_set_version = 0.1
+materialization_id
+materialization_semantics
+candidate_plan
+source_recipe
+source_recipe_summary
 experiment
 variants[]
-unresolved_slots[]
-ready_for_materialization
 authority
 ```
 
 Authority is fixed to:
 
 ```text
-recipe_materialization = none
-candidate_generation = none
+candidate_board_mutation = none
 candidate_selection = none
+source_generation = none
 ```
 
-## A / B / C roles
+The Candidate Plan snapshot is embedded so the output remains self-describing.
 
-### A · Control
+## Materialization semantics
 
-A preserves the current Recipe conceptually.
+Current semantics ID:
 
 ```text
-slot       A
-role       control
-resolution resolved
-change     null
-derivation preserve_current_recipe
+whole-recipe-scalar-v1
 ```
 
-M2.4 does not embed a generated control Recipe.
+M2.5 intentionally supports only scalar changes that can be applied without inventing a target layer or source choice.
 
-### B · Hypothesis
-
-B carries the exact human-authored planned change from the Variation Brief.
+Supported dimensions:
 
 ```text
-slot       B
-role       hypothesis
-resolution resolved
-derivation human_variation_brief
-change     <exact planned_change>
-hypothesis <exact human hypothesis>
+gain
+offset
+fade
 ```
 
-The compiler does not rewrite the human hypothesis.
-
-### C · Contrast
-
-C is only auto-resolved when the planned action has an unambiguous mechanical inverse:
+Supported actions:
 
 ```text
-increase ↔ decrease
-add      ↔ remove
+increase
+decrease
 ```
 
-The amount and unit are preserved.
+### Gain
+
+Gain changes apply additively to every layer.
 
 Example:
 
 ```text
-Brief:
-gain decrease 0.10 ratio
+Current
+layer 1 gain 0.8
+layer 2 gain 0.4
 
-C:
-gain increase 0.10 ratio
+B plan
+gain decrease 0.1 ratio
+
+B materialized
+0.7
+0.3
+
+C materialized
+0.9
+0.5
 ```
 
-The derivation is recorded as:
+Scope:
 
 ```text
-deterministic_inverse_v1
+all_layers
 ```
 
-## Manual contrast boundary
+### Offset
 
-Actions such as:
+Offset changes apply the same integer millisecond delta to every layer.
+
+A change that would create a negative offset is rejected instead of clamped.
+
+### Fade
+
+Fade changes apply to:
 
 ```text
-hold
-replace
-toggle
-custom
+processing.fade_out_ms
 ```
 
-do not have one universally correct experimental opposite.
+A negative result is rejected.
 
-MGAL does not invent one.
+## Unsupported dimensions
 
-Instead:
+A Candidate Plan may be structurally complete while M2.5 still cannot materialize it safely.
+
+For example:
 
 ```text
-C
-role       contrast
-resolution manual_required
-change     null
+layers add/remove
+sources
+other
 ```
 
-and:
+need a target-selection contract that M2.5 does not yet have.
+
+The Browser therefore shows:
 
 ```text
-ready_for_materialization = false
-unresolved_slots = ["C"]
+Materializer unsupported
 ```
 
-This lets the plan expose uncertainty before Recipe generation begins.
+instead of guessing which layer/source to add, remove, or replace.
 
-## Experiment snapshot
+## Source Recipe binding
 
-The Plan carries:
+Materialization receives a concrete current Recipe.
+
+Before creating A/B/C, MGAL fingerprints it using the same M2.2 summary contract:
 
 ```text
-hypothesis
-listening_for
-planned_change
-preserve[]
+recipe_sha256
+layer_count
+total_gain
+earliest_offset_ms
+latest_offset_ms
+normalize
+fade_out_ms
+source_ids[]
 ```
 
-The B variant must exactly equal this planned change.
+Every source file is SHA-256 checked beneath the supplied audio root.
 
-The C variant is recomputed from it during validation.
+The resulting summary must exactly equal:
 
-That means a hand-edited Plan cannot silently alter B or C semantics even if its content hash is recomputed.
+```text
+Candidate Plan
+  basis
+    current_recipe
+```
 
-## Content-addressed storage
+Therefore an old Plan cannot silently be applied to a different current Recipe.
 
-Plans are stored at:
+## A / B / C output
+
+### A · Control
+
+A copies the source Recipe exactly except for a deterministic materialized Recipe ID.
+
+No experiment change is applied.
+
+### B · Hypothesis
+
+B applies the exact M2.4 hypothesis change using `whole-recipe-scalar-v1`.
+
+### C · Contrast
+
+C applies the exact deterministic contrast change recorded in the Candidate Plan.
+
+M2.5 never derives a new contrast itself. It materializes the already validated Plan.
+
+## Recipe identities
+
+Each Recipe receives a deterministic ID derived from:
+
+- source Recipe ID
+- Candidate Plan ID
+- A/B/C slot
+
+Each variant also stores:
+
+```text
+recipe_sha256
+application
+recipe
+```
+
+Application records:
+
+```text
+semantics
+scope
+dimension
+action
+amount
+unit
+```
+
+## Workspace storage
+
+Materializations are stored at:
 
 ```text
 audio/
 └── .mgal/
-    └── candidate-plans/
-        └── <plan-hash>.json
+    └── materialized-recipe-sets/
+        └── <materialization-hash>/
+            ├── set.json
+            ├── A-control.json
+            ├── B-hypothesis.json
+            └── C-contrast.json
 ```
 
-Plan ID:
+ID form:
 
 ```text
-plan:<canonical payload SHA-256 prefix>
+materialized:<canonical payload SHA-256 prefix>
 ```
 
-Compiling the same Variation Brief again produces the same Plan and reuses the existing file.
+Saving the same materialization again is idempotent.
 
-## CLI
+The split A/B/C Recipe files are verified against `set.json`; missing or modified split files invalidate the workspace materialization.
 
-Compile:
+## Semantic validation
 
-```bash
-mgal candidate-plan-compile \
-  brief.json \
-  --audio-root ./audio \
-  --output plan.json
+Validation independently recomputes A/B/C from:
+
+```text
+embedded Candidate Plan
++
+embedded source Recipe
 ```
 
-List:
+It checks:
+
+- Candidate Plan validity
+- Plan materialization readiness
+- source Recipe validity
+- source Recipe SHA binding
+- full source Recipe summary equality with Plan basis
+- experiment snapshot equality
+- exact A/B/C transformation
+- individual Recipe SHA-256
+- authority boundary
+- content-derived materialization ID
+
+Rehashing a manually edited B Recipe does not make it valid because the expected Recipe is recomputed from the Plan.
+
+## Source drift verification
 
 ```bash
-mgal candidate-plan-list \
+mgal materialized-recipe-verify set.json \
   --audio-root ./audio
 ```
 
-Validate:
+re-hashes the current source WAVs.
+
+If a source file changed after materialization:
+
+```text
+same Recipe JSON
++
+different source bytes
+=
+verification failure
+```
+
+## CLI
+
+Materialize:
 
 ```bash
-mgal candidate-plan-validate \
-  plan.json
+mgal candidate-plan-materialize \
+  plan.json \
+  current-recipe.json \
+  --audio-root ./audio \
+  --output recipe-set.json
 ```
+
+List workspace sets:
+
+```bash
+mgal materialized-recipe-list \
+  --audio-root ./audio
+```
+
+Verify:
+
+```bash
+mgal materialized-recipe-verify \
+  recipe-set.json \
+  --audio-root ./audio
+```
+
+The workspace split Recipe files are always written even when `--output` is used for an additional JSON copy.
 
 ## Browser workflow
 
-Saved Variation Brief cards now expose:
+Ready Candidate Plans now expose:
 
 ```text
-[ Compile plan ]
+[ Materialize recipes ]
 ```
 
-After compilation:
+After successful materialization:
 
 ```text
-[ Plan ready ]
+[ Recipes ready ]
 ```
 
-or, when C cannot be derived safely:
+The Materialized Recipe shelf displays:
 
 ```text
-[ Plan needs C input ]
+A · control · <recipe-id>
+control · unchanged
+
+B · hypothesis · <recipe-id>
+all_layers · gain decrease 0.1 ratio
+
+C · contrast · <recipe-id>
+all_layers · gain increase 0.1 ratio
 ```
 
-The Candidate Plan shelf displays:
+The Browser posts:
 
 ```text
-A · control
-resolved · no change
-
-B · hypothesis
-resolved · gain decrease 0.1 ratio
-
-C · contrast
-resolved · gain increase 0.1 ratio
+POST /api/materialized-recipe-sets
 ```
 
-or an explicit:
+with:
 
 ```text
-C · contrast
-manual_required · no change
+plan_id
+current_recipe
 ```
 
-No materialize/apply/select action exists in this milestone.
+The server loads the saved Candidate Plan by content-addressed ID and rejects a current Recipe that no longer matches the Plan basis.
 
 ## HTTP API
 
 ```text
-GET  /api/candidate-plans
-POST /api/candidate-plans
+GET  /api/materialized-recipe-sets
+POST /api/materialized-recipe-sets
 ```
 
-POST accepts:
+GET lists valid workspace materializations.
 
-```json
-{
-  "brief_id": "brief:..."
-}
-```
+POST materializes one saved Plan against the current Recipe.
 
-The server loads the saved content-addressed Variation Brief, compiles the Plan, validates it, stores it, and returns the Plan plus storage result.
+## Candidate Board boundary
 
-## Standalone validation
+M2.5 creates Recipe artifacts but deliberately stops before audition integration.
 
-Candidate Plan validation checks:
-
-- exactly three variants
-- exact A-control / B-hypothesis / C-contrast order
-- planned-change dimension/action/unit contract
-- A has no change
-- B equals the human planned change exactly
-- C equals deterministic inverse when safe
-- C remains manual_required when inversion is unsafe
-- unresolved_slots matches unresolved variants
-- ready_for_materialization matches unresolved state
-- shared listening target is preserved
-- content-derived Plan ID is correct
-- no materialized Recipe or Candidate selection field exists
-
-## Automatic-action prohibition
-
-Candidate Plans reject fields such as:
+It does not call or store:
 
 ```text
-generated_recipe
-materialized_recipe
 selected_candidate_id
-recommended_candidate
-candidate_ranking
-preference_score
-auto_select
-apply_winner
+candidate decision
+Candidate Board mutation
+Apply winner
+Auto select
 ```
 
-M2.4 therefore stops at a design document.
+The Browser Materialize action does not alter `state.candidates`.
 
-## M2.0 → M2.4
+This keeps the next transition explicit:
+
+```text
+Materialized Recipe Set
+        ↓
+future audition bridge
+        ↓
+Candidate Board / Blind Preference
+```
+
+## M2.0 → M2.5
 
 ```text
 M2.0 Decision Memory
 What did I choose before?
 
 M2.1 Context Pack
-Which past choices matter now?
+Which past observations matter now?
 
 M2.2 Delta Inspector
 How is the current Recipe different?
 
 M2.3 Variation Brief
-What do I want to try next?
+What do I want to try?
 
 M2.4 Candidate Plan
-What experimental roles should we prepare?
-```
+What roles should the experiment contain?
 
-The next step can finally materialize those roles into real Recipes while retaining this audit trail.
+M2.5 Recipe Materializer
+What exact Recipe JSON represents each role?
+```
 
 ## Current constraints
 
-- only three fixed slots: A/B/C
-- C auto-contrast supports increase/decrease/add/remove only
-- non-invertible C requires later human resolution
-- Plan does not include materialized Recipe JSON
-- Plan does not edit Candidate Board
-- Plan does not select or rank Candidates
-- no execution lifecycle yet
-- no automatic materialization from Plan
+- scalar materializer supports gain/offset/fade only
+- increase/decrease only
+- gain is additive across all layers
+- offset change applies to all layers
+- fade is processing-level
+- layer/source targeting is not implemented yet
+- no automatic clamping for invalid negative offset/fade
+- no Candidate Board import yet
+- no audition directly from the Materialized Recipe shelf yet
+- preserve[] remains historical human text, not an executable constraint
+- no automatic Candidate selection or preference result
 
 ## Design principle
 
-> Plan the experiment before changing the artifact.
+> Materialize only what the Plan states unambiguously.
 
-M2.4 creates a clean seam between human intention and future Recipe generation.
+M2.5 turns human experiment intent into exact Recipe artifacts while preserving the boundary before listening and selection.
