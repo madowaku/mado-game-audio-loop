@@ -227,6 +227,7 @@ def compile_candidate_plan(
             "listening_for": human[
                 "listening_for"
             ],
+            "planned_change": planned_change,
             "preserve": human[
                 "preserve"
             ],
@@ -331,6 +332,17 @@ def validate_candidate_plan(
             raise CandidatePlanError(
                 f"Candidate Plan experiment {field} must be non-empty"
             )
+    planned_change = experiment.get(
+        "planned_change"
+    )
+    if not isinstance(
+        planned_change,
+        dict,
+    ):
+        raise CandidatePlanError(
+            "Candidate Plan experiment planned_change must be an object"
+        )
+
     preserve = experiment.get(
         "preserve"
     )
@@ -427,6 +439,10 @@ def validate_candidate_plan(
                 raise CandidatePlanError(
                     "B hypothesis must contain the human planned change"
                 )
+            if change != planned_change:
+                raise CandidatePlanError(
+                    "B hypothesis change must match the Variation Brief planned change"
+                )
             if item.get(
                 "hypothesis"
             ) != experiment[
@@ -436,37 +452,33 @@ def validate_candidate_plan(
                     "B hypothesis text must match the experiment hypothesis"
                 )
         else:
+            (
+                expected_resolution,
+                expected_change,
+                expected_derivation,
+            ) = _contrast_change(
+                planned_change
+            )
+            if (
+                resolution
+                != expected_resolution
+                or change
+                != expected_change
+                or item.get(
+                    "derivation"
+                )
+                != expected_derivation
+            ):
+                raise CandidatePlanError(
+                    "C contrast does not match deterministic contrast derivation"
+                )
             if (
                 resolution
                 == "manual_required"
             ):
-                if (
-                    change is not None
-                    or item.get(
-                        "derivation"
-                    )
-                    != "non_invertible_human_change"
-                ):
-                    raise CandidatePlanError(
-                        "manual C contrast must not invent a change"
-                    )
                 unresolved.append(
                     expected_slot
                 )
-            else:
-                if (
-                    not isinstance(
-                        change,
-                        dict,
-                    )
-                    or item.get(
-                        "derivation"
-                    )
-                    != "deterministic_inverse_v1"
-                ):
-                    raise CandidatePlanError(
-                        "resolved C contrast must be a deterministic inverse"
-                    )
 
         listening_for = item.get(
             "listening_for"
