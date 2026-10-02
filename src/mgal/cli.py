@@ -14,6 +14,7 @@ from .provenance import (
 )
 from .recipe import load_recipe
 from .recovery import recover_sources, write_relink_map
+from .release import build_release_pack, verify_release_pack
 from .render import render_recipe
 from .replay import replay_evidence_bundle
 from .server import serve
@@ -111,6 +112,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_ledger.add_argument("ledger")
     validate_ledger.add_argument("--audio-root")
+
+    release_pack = sub.add_parser(
+        "release-pack",
+        help="Build a release-ready WAV + attribution/provenance pack",
+    )
+    release_pack.add_argument("bundle_dir")
+    release_pack.add_argument("--output", "-o", required=True)
+    release_pack.add_argument(
+        "--name",
+        help="Optional release name used for the final WAV filename",
+    )
+
+    verify_release = sub.add_parser(
+        "verify-release",
+        help="Verify a Release / Attribution Pack",
+    )
+    verify_release.add_argument("pack_dir")
 
     recover = sub.add_parser(
         "recover-sources",
@@ -237,6 +255,24 @@ def main(argv: list[str] | None = None) -> int:
                     args.ledger,
                     audio_root=args.audio_root,
                 ),
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "release-pack":
+        output = build_release_pack(
+            args.bundle_dir,
+            args.output,
+            name=args.name,
+        )
+        print(output)
+        return 0
+
+    if args.command == "verify-release":
+        print(
+            json.dumps(
+                verify_release_pack(args.pack_dir),
                 indent=2,
             )
         )
