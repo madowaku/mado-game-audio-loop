@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from mgal.cli import main
 from mgal.variation_brief import (
     VariationBriefError,
     build_variation_brief,
@@ -390,3 +391,88 @@ def test_brief_rejects_automatic_action_fields():
         validate_variation_brief(
             brief
         )
+
+
+def test_variation_brief_cli_create_list_validate(
+    tmp_path: Path,
+    capsys,
+):
+    inspector_path = tmp_path / "inspector.json"
+    inspector_path.write_text(
+        json.dumps(
+            _valid_inspector()
+        ),
+        encoding="utf-8",
+    )
+    input_path = tmp_path / "human-input.json"
+    input_path.write_text(
+        json.dumps(
+            _human_input()
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "brief.json"
+
+    assert main(
+        [
+            "variation-brief-create",
+            str(inspector_path),
+            str(input_path),
+            "--audio-root",
+            str(tmp_path),
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    created = json.loads(
+        capsys.readouterr().out
+    )
+    assert created["brief"][
+        "human_input"
+    ]["authorship"] == "human_explicit"
+    assert output.is_file()
+
+    assert main(
+        [
+            "variation-brief-list",
+            "--audio-root",
+            str(tmp_path),
+        ]
+    ) == 0
+    listing = json.loads(
+        capsys.readouterr().out
+    )
+    assert len(listing) == 1
+    assert listing[0]["hypothesis"].startswith(
+        "Reducing gain"
+    )
+
+    assert main(
+        [
+            "variation-brief-validate",
+            str(output),
+        ]
+    ) == 0
+    validated = json.loads(
+        capsys.readouterr().out
+    )
+    assert validated["ok"] is True
+
+
+def test_variation_brief_contains_no_generated_recipe_or_candidate_action():
+    brief = build_variation_brief(
+        _valid_inspector(),
+        _human_input(),
+    )
+    raw = json.dumps(brief)
+
+    for token in (
+        "generated_recipe",
+        "recommended_candidate",
+        "auto_select",
+        "candidate_ranking",
+        "preference_score",
+        "similarity_score",
+        "apply_winner",
+    ):
+        assert token not in raw
