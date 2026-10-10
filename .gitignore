@@ -7,3 +7,8 @@ build/
 *.egg-info/
 output/
 evidence/
+
+# M2.6: licensed media must never enter public source control.
+**/.mgal/private-packs/
+**/assets/mgal_licensed/*
+!**/assets/mgal_licensed/.gitignore
