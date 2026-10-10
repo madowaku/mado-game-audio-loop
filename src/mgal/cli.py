@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 
 from .audio import scan_audio
+from .licensed_pack import intake_licensed_zip, verify_licensed_pack
+from .godot_bridge import stage_godot_adaptive_music
 from .candidate import load_candidate_board
 from .candidate_plan import (
     create_candidate_plan,
@@ -405,6 +407,37 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
 
+    licensed_intake = sub.add_parser(
+        "licensed-pack-intake",
+        help="Import a reviewed ZIP privately; never push raw audio to Git",
+    )
+    licensed_intake.add_argument("archive")
+    licensed_intake.add_argument("--audio-root", required=True)
+    licensed_intake.add_argument("--declaration", required=True)
+    licensed_intake.add_argument("--license-evidence", required=True)
+    licensed_intake.add_argument("--pack-id")
+
+    licensed_verify = sub.add_parser(
+        "licensed-pack-verify",
+        help="Verify private pack files and original license evidence",
+    )
+    licensed_verify.add_argument("--audio-root", required=True)
+    licensed_verify.add_argument("--pack-id", required=True)
+    licensed_verify.add_argument("--license-evidence", required=True)
+
+    godot_bridge = sub.add_parser(
+        "adaptive-music-godot",
+        help="Stage Godot 4 adaptive BGM script (audio copy requires explicit opt-in)",
+    )
+    godot_bridge.add_argument("--audio-root", required=True)
+    godot_bridge.add_argument("--pack-id", required=True)
+    godot_bridge.add_argument("--godot-project", required=True)
+    godot_bridge.add_argument("--license-evidence", required=True)
+    godot_bridge.add_argument(
+        "--copy-licensed-audio", action="store_true",
+        help="Copy files into ignored local Godot assets; never commit them",
+    )
+
     provenance_scan = sub.add_parser(
         "provenance-scan",
         help="Create a content-addressed provenance ledger from a WAV library",
@@ -620,6 +653,32 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "licensed-pack-intake":
+        print(json.dumps(intake_licensed_zip(
+            args.archive, args.audio_root, args.declaration,
+            args.license_evidence, pack_id=args.pack_id,
+        ), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "licensed-pack-verify":
+        pack = verify_licensed_pack(
+            args.audio_root, args.pack_id, args.license_evidence,
+        )
+        print(json.dumps({
+            "ok": True, "pack_id": pack["pack_id"],
+            "file_count": len(pack["files"]),
+            "music_group_count": len(pack["music_groups"]),
+        }, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "adaptive-music-godot":
+        print(json.dumps(stage_godot_adaptive_music(
+            args.audio_root, args.pack_id, args.godot_project,
+            args.license_evidence,
+            copy_licensed_audio=args.copy_licensed_audio,
+        ), ensure_ascii=False, indent=2))
+        return 0
 
     if args.command == "validate":
         recipe = load_recipe(args.recipe)
