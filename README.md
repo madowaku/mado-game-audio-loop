@@ -1,10 +1,31 @@
 # MADO Game Audio Loop
 
+## Current milestone: M2.6 Licensed Audio Pack Intake / Adaptive Music Bridge
+
+M2.6 adds a **separate, fail-closed lane for licensed third-party audio**.
+The existing M2.5 Recipe Materializer remains unchanged.
+
+- Privately import a local ZIP into `audio/.mgal/private-packs/<pack-id>/`.
+- Require a human-reviewed license declaration **and an on-disk evidence SHA-256**.
+- Verify per-file SHA-256/size, reject ZIP traversal and links, and preserve original bytes.
+- Detect unambiguous Low / Medium / High music groups (exclude 30s/60s cuts).
+- Generate Godot 4 GDScript and JSON with no licensed media in the source artifacts.
+- Copy licensed music into a local ignored Godot asset folder **only** with `--copy-licensed-audio`.
+
+**Do not commit or redistribute source audio ZIPs, extracted WAV/OGG/MP3 files, receipts, or standalone samples.**
+Godot game exports must embed the assets inside the build in accordance with the user's own license review.
+This is not legal advice or an automated grant of rights.
+
+Full instructions: [M2.6 licensed pack intake and Godot bridge](docs/MGAL_M2_6_LICENSED_AUDIO_ADAPTIVE_BRIDGE.md).
+
+---
+
+
 MADO Game Audio Loop (MGAL) turns game SFX work into a reproducible creative loop:
 
 **listen → remember → inspect → hypothesize → plan → materialize → audition next**
 
-## Current milestone: M2.5 Candidate Plan → Recipe Variation Materializer
+## Previous milestone: M2.5 Candidate Plan → Recipe Variation Materializer
 
 M2.5 is the first M2.x milestone that creates real Recipe JSON from a human-authored experiment chain.
 
