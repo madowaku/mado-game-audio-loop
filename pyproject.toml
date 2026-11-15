@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mado-game-audio-loop"
 version = "2.5.0"
-description = "A reproducible local workbench for game sound-effect recipes."
+description = "Reproducible local game-audio recipes and scene music preparation."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
@@ -15,6 +15,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 mgal = "mgal.cli:main"
+mgal-music = "mgal.scene_music:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
