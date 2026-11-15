@@ -1,0 +1,77 @@
+{
+  "schema_version": "mgsf-scene-music-director/0.1",
+  "status": "fixture_only",
+  "scene_id": "cozy_village",
+  "intent": {
+    "gameplay_context": "Explore a welcoming village hub",
+    "emotional_arc": [
+      "arrival",
+      "curiosity",
+      "comfort"
+    ],
+    "intensity": "low",
+    "duration_target_s": 120,
+    "loop_required": true,
+    "avoid_tags": [
+      "aggressive percussion",
+      "sudden jumps"
+    ]
+  },
+  "direction": {
+    "provider_ui_settings": "Warm, gentle village; acoustic plucks, soft piano, modest arrangement",
+    "variations": [
+      {
+        "id": "A",
+        "role": "control",
+        "direction": "Gentle acoustic village"
+      },
+      {
+        "id": "B",
+        "role": "emotional alternative",
+        "direction": "More nostalgic, less playful"
+      },
+      {
+        "id": "C",
+        "role": "arrangement alternative",
+        "direction": "More flute, fewer plucks"
+      }
+    ]
+  },
+  "provenance": {
+    "provider": "BGMクリエーター",
+    "url": "https://bgmcreator.cotorano.com/ja",
+    "acquisition_method": "manual_browser_download",
+    "retrieved_at": null,
+    "operator": null
+  },
+  "rights": {
+    "terms_url": null,
+    "reviewed_at": null,
+    "commercial_use_allowed": null,
+    "evidence": null
+  },
+  "source": {
+    "path": null,
+    "sha256": null,
+    "byte_count": null,
+    "duration_s": null,
+    "format": null
+  },
+  "processing": {
+    "operations": [],
+    "output_path": null,
+    "output_sha256": null
+  },
+  "playtest": {
+    "godot_project": null,
+    "scene": null,
+    "evidence_path": null,
+    "loop_verified": false
+  },
+  "decision": {
+    "reviewed_at": null,
+    "reviewer": null,
+    "selected_variation": null,
+    "rationale": null
+  }
+}
